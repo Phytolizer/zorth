@@ -1,5 +1,12 @@
 const std = @import("std");
 
+const pkgs = [_]std.build.Pkg{
+    .{
+        .name = "known-folders",
+        .source = .{ .path = "deps/known-folders/known-folders.zig" },
+    },
+};
+
 pub fn build(b: *std.build.Builder) void {
     const target = b.standardTargetOptions(.{});
     const mode = b.standardReleaseOptions();
@@ -7,6 +14,9 @@ pub fn build(b: *std.build.Builder) void {
     const exe = b.addExecutable("zorth", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    for (pkgs) |p| {
+        exe.addPackage(p);
+    }
     exe.install();
 
     const run_cmd = exe.run();

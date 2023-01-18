@@ -1,10 +1,30 @@
 const std = @import("std");
+const known_folders = @import("known-folders");
 
 const Op = union(enum) {
     PUSH: i64,
     PLUS,
     MINUS,
     DUMP,
+
+    const TAG_NAMES = init: {
+        var result: []const []const u8 = &[_][]const u8{};
+        inline for (std.meta.fieldNames(@This())) |fld| {
+            var lowerField: [fld.len]u8 = undefined;
+            for (fld) |c, i| {
+                lowerField[i] = std.ascii.toLower(c);
+            }
+            result = result ++ [_][]const u8{&lowerField};
+        }
+        break :init result;
+    };
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self) {
+            .PUSH => |x| try writer.print("push {d}", .{x}),
+            else => try writer.writeAll(TAG_NAMES[@enumToInt(std.meta.activeTag(self))]),
+        }
+    }
 };
 const COUNT_OPS = @typeInfo(Op).Union.fields.len;
 
@@ -39,6 +59,7 @@ fn pop(stack: anytype) !@typeInfo(@TypeOf(stack.items)).Pointer.child {
 
 fn simulateProgram(program: []const Op) !void {
     var stack = std.ArrayList(i64).init(a);
+    defer stack.deinit();
     for (program) |op| {
         switch (op) {
             .PUSH => |x| {
@@ -62,8 +83,87 @@ fn simulateProgram(program: []const Op) !void {
     }
 }
 
+fn temp() ![]const u8 {
+    const cacheDir = try known_folders.getPath(a, .cache);
+    defer if (cacheDir) |cd| a.free(cd);
+    return try std.fs.path.join(a, &.{ cacheDir orelse ".", "zorth", "intermediate" });
+}
+
+var temp_dir: std.fs.Dir = undefined;
+var temp_path: []const u8 = undefined;
+
+fn runCmd(argv: []const []const u8) !void {
+    var child = std.ChildProcess.init(argv, a);
+    const result = try child.spawnAndWait();
+    const was_ok = switch (result) {
+        .Exited => |code| code == 0,
+        else => false,
+    };
+    if (!was_ok) {
+        std.log.err("command {s} exited with error", .{argv[0]});
+        return error.Cmd;
+    }
+}
+
 fn compileProgram(program: []const Op) !void {
-    _ = program;
+    const dump = @embedFile("dump.nasm");
+    // emit asm
+    {
+        var temp_nasm = try temp_dir.createFile("out.nasm", .{});
+        defer temp_nasm.close();
+
+        const w = temp_nasm.writer();
+        try w.writeAll(dump);
+        try w.writeAll(
+            \\
+            \\    section .text
+            \\    global _start
+            \\_start:
+            \\
+        );
+        for (program) |op| {
+            try w.print("    ;; -- {} --\n", .{op});
+            switch (op) {
+                .PUSH => |x| try w.print(
+                    \\    push {d}
+                    \\
+                , .{x}),
+                .PLUS => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    add rax, rbx
+                    \\    push rax
+                    \\
+                ),
+                .MINUS => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    sub rax, rbx
+                    \\    push rax
+                    \\
+                ),
+                .DUMP => try w.writeAll(
+                    \\    pop rdi
+                    \\    call dump
+                    \\
+                ),
+            }
+        }
+        try w.writeAll(
+            \\pop rdi
+            \\mov rax, 60
+            \\syscall
+            \\
+        );
+    }
+
+    // compile asm
+    const src_path = try std.fs.path.join(a, &.{ temp_path, "out.nasm" });
+    defer a.free(src_path);
+    const obj_path = try std.fs.path.join(a, &.{ temp_path, "out.o" });
+    defer a.free(obj_path);
+    try runCmd(&.{ "nasm", "-f", "elf64", src_path, "-o", obj_path });
+    try runCmd(&.{ "ld", "-o", obj_path[0 .. obj_path.len - 2], obj_path });
 }
 
 pub fn main() void {
@@ -86,7 +186,12 @@ fn streq(x: []const u8, y: []const u8) bool {
 
 pub fn run() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.detectLeaks();
     a = gpa.allocator();
+    temp_path = try temp();
+    defer a.free(temp_path);
+    temp_dir = try std.fs.cwd().makeOpenPath(temp_path, .{});
+    defer temp_dir.close();
     const args = try std.process.argsAlloc(a);
     defer std.process.argsFree(a, args);
 

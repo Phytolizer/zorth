@@ -1,3 +1,4 @@
+section .text
 global dump
 
 dump:
