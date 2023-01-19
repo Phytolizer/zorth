@@ -7,6 +7,7 @@ const Op = union(enum) {
     MINUS,
     EQUAL,
     IF: usize,
+    ELSE: usize,
     END,
     DUMP,
 
@@ -88,6 +89,9 @@ fn simulateProgram(program: []const Op) !void {
                     dest
                 else
                     ip + 1;
+            },
+            .ELSE => |dest| {
+                ip = dest;
             },
             .END => {
                 ip += 1;
@@ -183,6 +187,10 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    jz .zorth_addr_{d}
                 \\
             , .{dest}),
+            .ELSE => |dest| try w.print(
+                \\    jmp .zorth_addr_{d}
+                \\
+            , .{dest}),
             .END => {},
             .DUMP => try w.writeAll(
                 \\    pop rdi
@@ -223,6 +231,8 @@ fn parseTokenAsOp(token: Token) !Op {
         return .EQUAL;
     } else if (streq(token.word, "if")) {
         return .{ .IF = undefined };
+    } else if (streq(token.word, "else")) {
+        return .{ .ELSE = undefined };
     } else if (streq(token.word, "end")) {
         return .END;
     } else if (streq(token.word, ".")) {
@@ -238,12 +248,26 @@ fn resolveJumps(program: []Op) !void {
     for (program) |op, ip| {
         switch (op) {
             .IF => try stack.append(ip),
+            .ELSE => {
+                const if_ip = try pop(&stack);
+                switch (program[if_ip]) {
+                    .IF => |*dest| {
+                        dest.* = ip + 1;
+                        try stack.append(ip);
+                    },
+                    else => {
+                        std.log.err("`else` without `if`", .{});
+                        return error.Parse;
+                    },
+                }
+            },
             .END => {
                 const block_ip = try pop(&stack);
                 switch (program[block_ip]) {
-                    .IF => |*dest| dest.* = ip,
+                    .IF, .ELSE => |*dest| dest.* = ip,
                     else => {
-                        std.process.abort();
+                        std.log.err("`end` without `if`", .{});
+                        return error.Parse;
                     },
                 }
             },
