@@ -29,6 +29,8 @@ const Op = struct {
         LOAD,
         STORE,
         DUMP,
+        SYSCALL1,
+        SYSCALL3,
 
         const TAG_NAMES = init: {
             var result: []const []const u8 = &[_][]const u8{};
@@ -162,6 +164,30 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 try stdout.print("{d}\n", .{x});
                 ip += 1;
             },
+            .SYSCALL1 => {
+                return error.UnimplementedSyscall;
+            },
+            .SYSCALL3 => {
+                const syscall_number = try pop(&stack);
+                const arg1 = try pop(&stack);
+                const arg2 = try pop(&stack);
+                const arg3 = try pop(&stack);
+                switch (syscall_number) {
+                    1 => {
+                        const fd = arg1;
+                        const buf = @intCast(usize, arg2);
+                        const count = @intCast(usize, arg3);
+                        const s = mem[buf .. buf + count];
+                        switch (fd) {
+                            1 => try stdout.print("{s}", .{s}),
+                            2 => std.debug.print("{s}", .{s}),
+                            else => return error.UnknownFileDesc,
+                        }
+                    },
+                    else => return error.UnimplementedSyscall,
+                }
+                ip += 1;
+            },
         }
     }
 }
@@ -285,6 +311,20 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    call dump
                 \\
             ),
+            .SYSCALL1 => try w.writeAll(
+                \\    pop rax
+                \\    pop rdi
+                \\    syscall
+                \\
+            ),
+            .SYSCALL3 => try w.writeAll(
+                \\    pop rax
+                \\    pop rdi
+                \\    pop rsi
+                \\    pop rdx
+                \\    syscall
+                \\
+            ),
         }
     }
     try w.print(
@@ -343,6 +383,10 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.STORE, token);
     } else if (streq(token.word, ",")) {
         return Op.init(.LOAD, token);
+    } else if (streq(token.word, "syscall1")) {
+        return Op.init(.SYSCALL1, token);
+    } else if (streq(token.word, "syscall3")) {
+        return Op.init(.SYSCALL3, token);
     } else {
         return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }
