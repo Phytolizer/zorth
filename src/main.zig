@@ -94,65 +94,54 @@ fn runCmd(argv: []const []const u8) !void {
     }
 }
 
-fn compileProgram(program: []const Op) !void {
+fn compileProgram(program: []const Op, out_path: []const u8) !void {
     const dump = @embedFile("dump.nasm");
-    // emit asm
-    {
-        var temp_nasm = try temp_dir.createFile("out.nasm", .{});
-        defer temp_nasm.close();
+    var temp_nasm = try temp_dir.createFile(out_path, .{});
+    defer temp_nasm.close();
 
-        const w = temp_nasm.writer();
-        try w.writeAll(dump);
-        try w.writeAll(
-            \\
-            \\    section .text
-            \\    global _start
-            \\_start:
-            \\
-        );
-        for (program) |op| {
-            try w.print("    ;; -- {} --\n", .{op});
-            switch (op) {
-                .PUSH => |x| try w.print(
-                    \\    push {d}
-                    \\
-                , .{x}),
-                .PLUS => try w.writeAll(
-                    \\    pop rbx
-                    \\    pop rax
-                    \\    add rax, rbx
-                    \\    push rax
-                    \\
-                ),
-                .MINUS => try w.writeAll(
-                    \\    pop rbx
-                    \\    pop rax
-                    \\    sub rax, rbx
-                    \\    push rax
-                    \\
-                ),
-                .DUMP => try w.writeAll(
-                    \\    pop rdi
-                    \\    call dump
-                    \\
-                ),
-            }
+    const w = temp_nasm.writer();
+    try w.writeAll(dump);
+    try w.writeAll(
+        \\
+        \\    section .text
+        \\    global _start
+        \\_start:
+        \\
+    );
+    for (program) |op| {
+        try w.print("    ;; -- {} --\n", .{op});
+        switch (op) {
+            .PUSH => |x| try w.print(
+                \\    push {d}
+                \\
+            , .{x}),
+            .PLUS => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    add rax, rbx
+                \\    push rax
+                \\
+            ),
+            .MINUS => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    sub rax, rbx
+                \\    push rax
+                \\
+            ),
+            .DUMP => try w.writeAll(
+                \\    pop rdi
+                \\    call dump
+                \\
+            ),
         }
-        try w.writeAll(
-            \\mov rdi, 0
-            \\mov rax, 60
-            \\syscall
-            \\
-        );
     }
-
-    // compile asm
-    const src_path = try std.fs.path.join(a, &.{ temp_path, "out.nasm" });
-    defer a.free(src_path);
-    const obj_path = try std.fs.path.join(a, &.{ temp_path, "out.o" });
-    defer a.free(obj_path);
-    try runCmd(&.{ "nasm", "-f", "elf64", src_path, "-o", obj_path });
-    try runCmd(&.{ "ld", "-o", "output", obj_path });
+    try w.writeAll(
+        \\mov rdi, 0
+        \\mov rax, 60
+        \\syscall
+        \\
+    );
 }
 
 fn parseWordAsOp(word: []const u8) !Op {
@@ -240,7 +229,21 @@ pub fn run() !void {
         const program_path = uncons(&args);
         const program = try loadProgramFromFile(program_path);
         defer a.free(program);
-        try compileProgram(program);
+        var basename = std.fs.path.basename(program_path);
+        const extension = std.fs.path.extension(basename);
+        if (streq(extension, ".zorth")) {
+            basename = basename[0 .. basename.len - ".zorth".len];
+        }
+        const src_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".nasm" });
+        defer a.free(src_path);
+        try compileProgram(program, src_path);
+        const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
+        defer a.free(obj_path);
+        try runCmd(&.{ "nasm", "-f", "elf64", src_path, "-o", obj_path });
+        const dirname = std.fs.path.dirname(program_path) orelse ".";
+        const exe_path = try std.fs.path.join(a, &.{ dirname, basename });
+        defer a.free(exe_path);
+        try runCmd(&.{ "ld", "-o", exe_path, obj_path });
     } else if (streq(subcommand, "help")) {
         try usage(stdout, program_name);
         return;
