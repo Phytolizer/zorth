@@ -1,44 +1,52 @@
 const std = @import("std");
 const known_folders = @import("known-folders");
 
-const Op = union(enum) {
-    PUSH: i64,
-    PLUS,
-    MINUS,
-    EQUAL,
-    IF: usize,
-    ELSE: usize,
-    END: usize,
-    DUP,
-    GT,
-    WHILE,
-    DO: usize,
-    DUMP,
+const Op = struct {
+    code: Code,
 
-    const TAG_NAMES = init: {
-        var result: []const []const u8 = &[_][]const u8{};
-        inline for (std.meta.fieldNames(@This())) |fld| {
-            var lowerField: [fld.len]u8 = undefined;
-            for (fld) |c, i| {
-                lowerField[i] = std.ascii.toLower(c);
+    pub fn init(code: Code) @This() {
+        return .{ .code = code };
+    }
+
+    const Code = union(enum) {
+        PUSH: i64,
+        PLUS,
+        MINUS,
+        EQUAL,
+        IF: usize,
+        ELSE: usize,
+        END: usize,
+        DUP,
+        GT,
+        WHILE,
+        DO: usize,
+        DUMP,
+
+        const TAG_NAMES = init: {
+            var result: []const []const u8 = &[_][]const u8{};
+            inline for (std.meta.fieldNames(@This())) |fld| {
+                var lowerField: [fld.len]u8 = undefined;
+                for (fld) |c, i| {
+                    lowerField[i] = std.ascii.toLower(c);
+                }
+                result = result ++ [_][]const u8{&lowerField};
             }
-            result = result ++ [_][]const u8{&lowerField};
+            break :init result;
+        };
+
+        fn tagName(self: @This()) []const u8 {
+            return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
         }
-        break :init result;
+
+        pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+            switch (self) {
+                .PUSH => |x| try writer.print("{s} {d}", .{ tagName(self), x }),
+                else => try writer.writeAll(tagName(self)),
+            }
+        }
     };
-
-    fn tagName(self: @This()) []const u8 {
-        return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
-    }
-
-    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        switch (self) {
-            .PUSH => |x| try writer.print("{s} {d}", .{ tagName(self), x }),
-            else => try writer.writeAll(tagName(self)),
-        }
-    }
+    const COUNT_OPS = @typeInfo(Op).Union.fields.len;
 };
-const COUNT_OPS = @typeInfo(Op).Union.fields.len;
 
 var a: std.mem.Allocator = undefined;
 
@@ -64,7 +72,7 @@ fn simulateProgram(program: []const Op) !void {
     var ip: usize = 0;
     while (ip < program.len) {
         const op = program[ip];
-        switch (op) {
+        switch (op.code) {
             .PUSH => |x| {
                 try stack.append(x);
                 ip += 1;
@@ -177,7 +185,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
             \\.zorth_addr_{d}:
             \\
         , .{ op, ip });
-        switch (op) {
+        switch (op.code) {
             .PUSH => |x| try w.print(
                 \\    push {d}
                 \\
@@ -278,29 +286,29 @@ fn parseTokenAsOp(token: Token) !Op {
         });
     }
     if (streq(token.word, "+")) {
-        return .PLUS;
+        return Op.init(.PLUS);
     } else if (streq(token.word, "-")) {
-        return .MINUS;
+        return Op.init(.MINUS);
     } else if (streq(token.word, "=")) {
-        return .EQUAL;
+        return Op.init(.EQUAL);
     } else if (streq(token.word, "if")) {
-        return .{ .IF = undefined };
+        return Op.init(.{ .IF = undefined });
     } else if (streq(token.word, "else")) {
-        return .{ .ELSE = undefined };
+        return Op.init(.{ .ELSE = undefined });
     } else if (streq(token.word, "end")) {
-        return .{ .END = undefined };
+        return Op.init(.{ .END = undefined });
     } else if (streq(token.word, "dup")) {
-        return .DUP;
+        return Op.init(.DUP);
     } else if (streq(token.word, ">")) {
-        return .GT;
+        return Op.init(.GT);
     } else if (streq(token.word, "while")) {
-        return .WHILE;
+        return Op.init(.WHILE);
     } else if (streq(token.word, "do")) {
-        return .{ .DO = undefined };
+        return Op.init(.{ .DO = undefined });
     } else if (streq(token.word, ".")) {
-        return .DUMP;
+        return Op.init(.DUMP);
     } else {
-        return .{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) };
+        return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) });
     }
 }
 
@@ -308,11 +316,11 @@ fn resolveJumps(program: []Op) !void {
     var stack = std.ArrayList(usize).init(a);
     defer stack.deinit();
     for (program) |*op, ip| {
-        switch (op.*) {
+        switch (op.code) {
             .IF, .WHILE => try stack.append(ip),
             .ELSE => {
                 const if_ip = try pop(&stack);
-                switch (program[if_ip]) {
+                switch (program[if_ip].code) {
                     .IF => |*dest| {
                         dest.* = ip + 1;
                         try stack.append(ip);
@@ -330,7 +338,7 @@ fn resolveJumps(program: []Op) !void {
             },
             .END => |*end_dest| {
                 const block_ip = try pop(&stack);
-                switch (program[block_ip]) {
+                switch (program[block_ip].code) {
                     .IF, .ELSE => |*dest| {
                         dest.* = ip;
                         end_dest.* = ip + 1;
