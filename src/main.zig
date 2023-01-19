@@ -305,7 +305,7 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.WHILE, token);
     } else if (streq(token.word, "do")) {
         return Op.init(.{ .DO = undefined }, token);
-    } else if (streq(token.word, ".")) {
+    } else if (streq(token.word, "dump")) {
         return Op.init(.DUMP, token);
     } else if (streq(token.word, "mem")) {
         return Op.init(.MEM, token);
