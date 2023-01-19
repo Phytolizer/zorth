@@ -10,6 +10,7 @@ const Op = union(enum) {
     ELSE: usize,
     END,
     DUP,
+    GT,
     DUMP,
 
     const TAG_NAMES = init: {
@@ -102,6 +103,12 @@ fn simulateProgram(program: []const Op) !void {
                 try stack.appendNTimes(x, 2);
                 ip += 1;
             },
+            .GT => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x > y));
+                ip += 1;
+            },
             .DUMP => {
                 const x = try pop(&stack);
                 std.debug.print("{d}\n", .{x});
@@ -182,7 +189,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    mov rdx, 1
                 \\    pop rbx
                 \\    pop rax
-                \\    cmp rbx, rax
+                \\    cmp rax, rbx
                 \\    cmove rcx, rdx
                 \\    push rcx
                 \\
@@ -202,6 +209,16 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rax
                 \\    push rax
                 \\    push rax
+                \\
+            ),
+            .GT => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rax, rbx
+                \\    cmovg rcx, rdx
+                \\    push rcx
                 \\
             ),
             .DUMP => try w.writeAll(
@@ -249,6 +266,8 @@ fn parseTokenAsOp(token: Token) !Op {
         return .END;
     } else if (streq(token.word, "dup")) {
         return .DUP;
+    } else if (streq(token.word, ">")) {
+        return .GT;
     } else if (streq(token.word, ".")) {
         return .DUMP;
     } else {
