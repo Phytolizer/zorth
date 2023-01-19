@@ -324,12 +324,12 @@ var temp_dir: std.fs.Dir = undefined;
 var temp_path: []const u8 = undefined;
 
 fn compileProgram(program: []const Op, out_path: []const u8) !void {
-    const dump = @embedFile("dump.nasm");
+    const print = @embedFile("dump.nasm");
     var temp_nasm = try temp_dir.createFile(out_path, .{});
     defer temp_nasm.close();
 
     const w = temp_nasm.writer();
-    try w.writeAll(dump);
+    try w.writeAll(print);
     try w.writeAll(
         \\
         \\    section .text
@@ -669,7 +669,7 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.WHILE, token);
     } else if (streq(token.word, "do")) {
         return Op.init(.{ .DO = undefined }, token);
-    } else if (streq(token.word, "dump")) {
+    } else if (streq(token.word, "print")) {
         return Op.init(.DUMP, token);
     } else if (streq(token.word, "mem")) {
         return Op.init(.MEM, token);
