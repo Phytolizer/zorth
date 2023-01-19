@@ -1,5 +1,0 @@
-// bol comment
-10 while dup 0 > do  // eol comment
-  dup dump
-  1 -
-end
