@@ -5,6 +5,7 @@ const Op = union(enum) {
     PUSH: i64,
     PLUS,
     MINUS,
+    EQUAL,
     DUMP,
 
     const TAG_NAMES = init: {
@@ -19,10 +20,14 @@ const Op = union(enum) {
         break :init result;
     };
 
+    fn tagName(self: @This()) []const u8 {
+        return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
+    }
+
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         switch (self) {
-            .PUSH => |x| try writer.print("push {d}", .{x}),
-            else => try writer.writeAll(TAG_NAMES[@enumToInt(std.meta.activeTag(self))]),
+            .PUSH => |x| try writer.print("{s} {d}", .{ tagName(self), x }),
+            else => try writer.writeAll(tagName(self)),
         }
     }
 };
@@ -63,6 +68,11 @@ fn simulateProgram(program: []const Op) !void {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(x - y);
+            },
+            .EQUAL => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x == y));
             },
             .DUMP => {
                 const x = try pop(&stack);
@@ -134,6 +144,16 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rax
                 \\
             ),
+            .EQUAL => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rbx, rax
+                \\    cmove rcx, rdx
+                \\    push rcx
+                \\
+            ),
             .DUMP => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
@@ -169,6 +189,8 @@ fn parseTokenAsOp(token: Token) !Op {
         .PLUS
     else if (streq(token.word, "-"))
         .MINUS
+    else if (streq(token.word, "="))
+        .EQUAL
     else if (streq(token.word, "."))
         .DUMP
     else .{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) };
