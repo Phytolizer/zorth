@@ -84,7 +84,7 @@ var temp_path: []const u8 = undefined;
 fn runCmd(argv: []const []const u8) !void {
     std.debug.print("[cmd]", .{});
     for (argv) |arg| {
-        std.debug.print(" {s}", .{arg});
+        std.debug.print(" '{s}'", .{arg});
     }
     std.debug.print("\n", .{});
     var child = std.ChildProcess.init(argv, a);
