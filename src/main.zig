@@ -16,7 +16,11 @@ const Op = struct {
     }
 
     const Code = union(enum) {
-        PUSH: i64,
+        PUSH_INT: i64,
+        PUSH_STR: struct {
+            text: []u8,
+            addr: ?usize = null,
+        },
         PLUS,
         MINUS,
         MOD,
@@ -55,11 +59,14 @@ const Op = struct {
         const TAG_NAMES = init: {
             var result: []const []const u8 = &[_][]const u8{};
             inline for (std.meta.fieldNames(@This())) |fld| {
-                var lowerField: [fld.len]u8 = undefined;
+                var lower_field: [fld.len]u8 = undefined;
                 for (fld) |c, i| {
-                    lowerField[i] = std.ascii.toLower(c);
+                    lower_field[i] = std.ascii.toLower(c);
+                    if (lower_field[i] == '_') {
+                        lower_field[i] = ' ';
+                    }
                 }
-                result = result ++ [_][]const u8{&lowerField};
+                result = result ++ [_][]const u8{&lower_field};
             }
             break :init result;
         };
@@ -71,13 +78,23 @@ const Op = struct {
 
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         switch (self.code) {
-            .PUSH => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
+            .PUSH_INT => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
             else => try writer.writeAll(Code.tagName(self.code)),
         }
     }
     const COUNT_OPS = @typeInfo(Op).Union.fields.len;
+
+    pub fn deinit(self: @This()) void {
+        switch (self.code) {
+            .PUSH_STR => |s| {
+                g_a.free(s.text);
+            },
+            else => {},
+        }
+    }
 };
 
+const STR_CAPACITY = 640_000;
 const MEM_CAPACITY = 640_000;
 
 const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
@@ -135,21 +152,34 @@ fn pop(stack: anytype) !@typeInfo(@TypeOf(stack.items)).Pointer.child {
     return stack.popOrNull() orelse return error.StackUnderflow;
 }
 
-fn simulateProgram(program: []const Op, stdout: anytype) !void {
+fn simulateProgram(program: []Op, stdout: anytype) !void {
     var stack = std.ArrayList(i64).init(g_a);
     defer stack.deinit();
     var ip: usize = 0;
-    var mem = try g_a.alloc(u8, MEM_CAPACITY);
+    var mem = try g_a.alloc(u8, STR_CAPACITY + MEM_CAPACITY);
+    var str_size: usize = 0;
     defer g_a.free(mem);
     while (ip < program.len) {
-        const op = program[ip];
+        const op = &program[ip];
         if (DEBUGGING) {
             std.debug.print("stack: {any}\n", .{stack.items});
             std.debug.print("op: {}\n", .{op});
         }
         switch (op.code) {
-            .PUSH => |x| {
+            .PUSH_INT => |x| {
                 try stack.append(x);
+                ip += 1;
+            },
+            .PUSH_STR => |*s| {
+                try stack.append(@intCast(i64, s.text.len));
+                if (s.addr) |addr| {
+                    try stack.append(@intCast(i64, addr));
+                } else {
+                    s.addr = str_size;
+                    std.mem.copy(u8, mem[str_size .. str_size + s.text.len], s.text);
+                    str_size += s.text.len;
+                    try stack.append(@intCast(i64, s.addr.?));
+                }
                 ip += 1;
             },
             .PLUS => {
@@ -287,7 +317,7 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                     ip + 1;
             },
             .MEM => {
-                try stack.append(0);
+                try stack.append(STR_CAPACITY);
                 ip += 1;
             },
             .LOAD => {
@@ -364,6 +394,8 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
     const print = @embedFile("dump.nasm");
     var temp_nasm = try temp_dir.createFile(out_path, .{});
     defer temp_nasm.close();
+    var strs = std.ArrayList([]const u8).init(g_a);
+    defer strs.deinit();
 
     const w = temp_nasm.writer();
     try w.writeAll(print);
@@ -381,11 +413,20 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
             \\
         , .{ op, ip });
         switch (op.code) {
-            .PUSH => |x| try w.print(
+            .PUSH_INT => |x| try w.print(
                 \\    mov rax, {d}
                 \\    push rax
                 \\
             , .{x}),
+            .PUSH_STR => |s| {
+                try w.print(
+                    \\    mov rax, {d}
+                    \\    push rax
+                    \\    push zorth_str_{d}
+                    \\
+                , .{ s.text.len, strs.items.len });
+                try strs.append(s.text);
+            },
             .PLUS => try w.writeAll(
                 \\    pop rbx
                 \\    pop rax
@@ -649,7 +690,16 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         \\    section .bss
         \\mem: resb {d}
         \\
+        \\    section .data
+        \\
     , .{ program.len, MEM_CAPACITY });
+    for (strs.items) |s, i| {
+        try w.print("zorth_str_{d}: db ", .{i});
+        for (s) |b, j| {
+            try w.print("{s}{d}", .{ if (j > 0) "," else "", b });
+        }
+        try w.writeAll("\n");
+    }
 }
 
 const Token = struct {
@@ -661,6 +711,7 @@ const Token = struct {
     const Type = union(enum) {
         word: []const u8,
         int: i64,
+        str: []const u8,
     };
 };
 
@@ -677,7 +728,10 @@ fn parseTokenAsOp(token: Token) !Op {
             });
             return error.Parse;
         },
-        .int => |i| return Op.init(.{ .PUSH = i }, token),
+        .str => |s| return Op.init(.{
+            .PUSH_STR = .{ .text = try g_a.dupe(u8, s) },
+        }, token),
+        .int => |i| return Op.init(.{ .PUSH_INT = i }, token),
     }
 }
 
@@ -793,15 +847,29 @@ const Lexer = struct {
         while (true) {
             const maybe_col = indexOfNonePos(u8, self.line, self.col, &std.ascii.whitespace);
             if (maybe_col) |col| {
-                const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
-                const result = Token{
-                    .file_path = self.file_path,
-                    .row = self.row + 1,
-                    .col = col + 1,
-                    .type = lexWord(self.line[col..col_end]),
-                };
-                self.col = col_end;
-                return result;
+                if (self.line[col] == '"') {
+                    const col_end = std.mem.indexOfScalarPos(u8, self.line, col + 1, '"') orelse
+                        // TODO: error here
+                        unreachable;
+                    const text = self.line[col + 1 .. col_end];
+                    self.col = col_end + 1;
+                    return Token{
+                        .file_path = self.file_path,
+                        .row = self.row + 1,
+                        .col = col + 1,
+                        .type = .{ .str = text },
+                    };
+                } else {
+                    const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
+                    const result = Token{
+                        .file_path = self.file_path,
+                        .row = self.row + 1,
+                        .col = col + 1,
+                        .type = lexWord(self.line[col..col_end]),
+                    };
+                    self.col = col_end;
+                    return result;
+                }
             } else if (self.lines.next()) |next_line| {
                 self.line = trimComment(next_line);
                 self.col = 0;
@@ -871,7 +939,12 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         }
         const program_path = common.uncons(args, &i);
         const program = try loadProgramFromFile(program_path);
-        defer a.free(program);
+        defer {
+            for (program) |op| {
+                op.deinit();
+            }
+            a.free(program);
+        }
         try simulateProgram(program, stdout);
     } else if (streq(subcommand, "com")) {
         var do_run = false;
@@ -899,7 +972,12 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
             return error.Usage;
         };
         const program = try loadProgramFromFile(program_path);
-        defer a.free(program);
+        defer {
+            for (program) |op| {
+                op.deinit();
+            }
+            a.free(program);
+        }
         var basename = std.fs.path.basename(program_path);
         const extension = std.fs.path.extension(basename);
         if (streq(extension, ".zorth")) {

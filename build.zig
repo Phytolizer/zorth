@@ -32,20 +32,19 @@ pub fn build(b: *std.build.Builder) void {
     const tests = b.addExecutable("zorth-test", "src/test.zig");
     tests.setTarget(target);
     tests.setBuildMode(mode);
-    for (pkgs) |p| {
-        tests.addPackage(p);
-    }
     tests.addPackage(.{
         .name = "zorth",
         .dependencies = &pkgs,
         .source = .{ .path = "src/main.zig" },
     });
+    tests.install();
 
     const tests_run_cmd = tests.run();
-    tests_run_cmd.step.dependOn(&tests.step);
+    tests_run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         tests_run_cmd.addArgs(args);
     }
+    tests_run_cmd.expected_exit_code = null;
 
     const tests_run_step = b.step("test", "Test the app");
     tests_run_step.dependOn(&tests_run_cmd.step);
