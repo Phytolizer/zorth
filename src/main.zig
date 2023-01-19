@@ -26,6 +26,8 @@ const Op = struct {
         WHILE,
         DO: usize,
         MEM,
+        LOAD,
+        STORE,
         DUMP,
 
         const TAG_NAMES = init: {
@@ -78,6 +80,8 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
     var stack = std.ArrayList(i64).init(g_a);
     defer stack.deinit();
     var ip: usize = 0;
+    var mem = try g_a.alloc(u8, MEM_CAPACITY);
+    defer g_a.free(mem);
     while (ip < program.len) {
         const op = program[ip];
         switch (op.code) {
@@ -138,7 +142,20 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                     ip + 1;
             },
             .MEM => {
-                std.debug.panic("TODO", .{});
+                try stack.append(0);
+                ip += 1;
+            },
+            .LOAD => {
+                const addr = try pop(&stack);
+                const byte = mem[@intCast(usize, addr)];
+                try stack.append(byte);
+                ip += 1;
+            },
+            .STORE => {
+                const value = try pop(&stack);
+                const addr = try pop(&stack);
+                mem[@intCast(usize, addr)] = @truncate(u8, @intCast(u63, value));
+                ip += 1;
             },
             .DUMP => {
                 const x = try pop(&stack);
@@ -250,6 +267,19 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push mem
                 \\
             ),
+            .LOAD => try w.writeAll(
+                \\    pop rax
+                \\    xor rbx, rbx
+                \\    mov bl, [rax]
+                \\    push rbx
+                \\
+            ),
+            .STORE => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    mov [rax], bl
+                \\
+            ),
             .DUMP => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
@@ -309,6 +339,10 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.DUMP, token);
     } else if (streq(token.word, "mem")) {
         return Op.init(.MEM, token);
+    } else if (streq(token.word, ".")) {
+        return Op.init(.STORE, token);
+    } else if (streq(token.word, ",")) {
+        return Op.init(.LOAD, token);
     } else {
         return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }
