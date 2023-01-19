@@ -73,6 +73,7 @@ fn doRecord() !void {
         if (ent.kind == .File and std.mem.endsWith(u8, ent.basename, ".zorth")) {
             const real_path = try iter_dir.dir.realpathAlloc(a, ent.path);
             defer a.free(real_path);
+            std.log.info("Recording output of {s}", .{real_path});
             var sim_output_arr = std.ArrayList(u8).init(a);
             defer sim_output_arr.deinit();
             var sim_output = sim_output_arr.writer();

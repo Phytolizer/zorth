@@ -2,6 +2,8 @@ const std = @import("std");
 const known_folders = @import("known-folders");
 const common = @import("common.zig");
 
+const DEBUGGING = false;
+
 const Op = struct {
     code: Code,
     loc: Token,
@@ -17,7 +19,7 @@ const Op = struct {
         PUSH: i64,
         PLUS,
         MINUS,
-        EQUAL,
+        MOD,
         SHR,
         SHL,
         BOR,
@@ -29,8 +31,13 @@ const Op = struct {
         DUP2,
         SWAP,
         DROP,
+        OVER,
+        EQ,
+        NE,
         GT,
         LT,
+        GE,
+        LE,
         WHILE,
         DO: usize,
         MEM,
@@ -99,6 +106,10 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
     defer g_a.free(mem);
     while (ip < program.len) {
         const op = program[ip];
+        if (DEBUGGING) {
+            std.debug.print("stack: {any}\n", .{stack.items});
+            std.debug.print("op: {}\n", .{op});
+        }
         switch (op.code) {
             .PUSH => |x| {
                 try stack.append(x);
@@ -116,22 +127,28 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 try stack.append(x - y);
                 ip += 1;
             },
-            .EQUAL => {
+            .MOD => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
-                try stack.append(@boolToInt(x == y));
+                try stack.append(@rem(x, y));
                 ip += 1;
             },
             .SHR => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
-                try stack.append(x >> @intCast(u6, y));
+                try stack.append(if (y > std.math.maxInt(u6))
+                    0
+                else
+                    x >> @intCast(u6, y));
                 ip += 1;
             },
             .SHL => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
-                try stack.append(x << @intCast(u6, y));
+                try stack.append(if (y > std.math.maxInt(u6))
+                    0
+                else
+                    x << @intCast(u6, y));
                 ip += 1;
             },
             .BOR => {
@@ -167,21 +184,35 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
             .DUP2 => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
-                try stack.append(x);
-                try stack.append(y);
-                try stack.append(x);
-                try stack.append(y);
+                try stack.appendSlice(&.{ x, y, x, y });
                 ip += 1;
             },
             .SWAP => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
-                try stack.append(y);
-                try stack.append(x);
+                try stack.appendSlice(&.{ y, x });
                 ip += 1;
             },
             .DROP => {
                 _ = try pop(&stack);
+                ip += 1;
+            },
+            .OVER => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.appendSlice(&.{ x, y, x });
+                ip += 1;
+            },
+            .EQ => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x == y));
+                ip += 1;
+            },
+            .NE => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x != y));
                 ip += 1;
             },
             .GT => {
@@ -194,6 +225,18 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(@boolToInt(x < y));
+                ip += 1;
+            },
+            .GE => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x >= y));
+                ip += 1;
+            },
+            .LE => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x <= y));
                 ip += 1;
             },
             .WHILE => {
@@ -301,7 +344,8 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         , .{ op, ip });
         switch (op.code) {
             .PUSH => |x| try w.print(
-                \\    push {d}
+                \\    mov rax, {d}
+                \\    push rax
                 \\
             , .{x}),
             .PLUS => try w.writeAll(
@@ -318,14 +362,12 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rax
                 \\
             ),
-            .EQUAL => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
+            .MOD => try w.writeAll(
+                \\    xor rdx, rdx
                 \\    pop rbx
                 \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmove rcx, rdx
-                \\    push rcx
+                \\    div rbx
+                \\    push rdx
                 \\
             ),
             .SHR => try w.writeAll(
@@ -398,6 +440,34 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rax
                 \\
             ),
+            .OVER => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    push rax
+                \\    push rbx
+                \\    push rax
+                \\
+            ),
+            .EQ => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rax, rbx
+                \\    cmove rcx, rdx
+                \\    push rcx
+                \\
+            ),
+            .NE => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rax, rbx
+                \\    cmovne rcx, rdx
+                \\    push rcx
+                \\
+            ),
             .GT => try w.writeAll(
                 \\    mov rcx, 0
                 \\    mov rdx, 1
@@ -415,6 +485,26 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rax
                 \\    cmp rax, rbx
                 \\    cmovl rcx, rdx
+                \\    push rcx
+                \\
+            ),
+            .GE => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rax, rbx
+                \\    cmovge rcx, rdx
+                \\    push rcx
+                \\
+            ),
+            .LE => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rax, rbx
+                \\    cmovle rcx, rdx
                 \\    push rcx
                 \\
             ),
@@ -537,8 +627,8 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.PLUS, token);
     } else if (streq(token.word, "-")) {
         return Op.init(.MINUS, token);
-    } else if (streq(token.word, "=")) {
-        return Op.init(.EQUAL, token);
+    } else if (streq(token.word, "mod")) {
+        return Op.init(.MOD, token);
     } else if (streq(token.word, "shr")) {
         return Op.init(.SHR, token);
     } else if (streq(token.word, "shl")) {
@@ -555,8 +645,18 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.{ .END = undefined }, token);
     } else if (streq(token.word, "dup")) {
         return Op.init(.DUP, token);
+    } else if (streq(token.word, "=")) {
+        return Op.init(.EQ, token);
+    } else if (streq(token.word, "!=")) {
+        return Op.init(.NE, token);
     } else if (streq(token.word, ">")) {
         return Op.init(.GT, token);
+    } else if (streq(token.word, "<")) {
+        return Op.init(.LT, token);
+    } else if (streq(token.word, ">=")) {
+        return Op.init(.GE, token);
+    } else if (streq(token.word, "<=")) {
+        return Op.init(.LE, token);
     } else if (streq(token.word, "while")) {
         return Op.init(.WHILE, token);
     } else if (streq(token.word, "do")) {
@@ -589,8 +689,8 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.SWAP, token);
     } else if (streq(token.word, "drop")) {
         return Op.init(.DROP, token);
-    } else if (streq(token.word, "<")) {
-        return Op.init(.LT, token);
+    } else if (streq(token.word, "over")) {
+        return Op.init(.OVER, token);
     } else {
         return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }

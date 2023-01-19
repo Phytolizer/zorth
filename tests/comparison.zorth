@@ -1,15 +1,42 @@
+// Prepare the separation line
+0 while dup 30 < do
+  dup mem + 45 .
+  1 +
+end
+mem + 10 .
+
 // equals
 69 420 = dump
 69 69  = dump
 
-1111111111 dump
+31 mem 1 1 syscall3
 
 // greater
 420 69 > dump
 69 420 > dump
 
-1111111111 dump
+31 mem 1 1 syscall3
 
 // less
 420 69 < dump
 69 420 < dump
+
+31 mem 1 1 syscall3
+
+// greater or equal
+420 69 >= dump
+69 420 >= dump
+69 69 >= dump
+
+31 mem 1 1 syscall3
+
+// less or equal
+420 69 <= dump
+69 420 <= dump
+69 69 <= dump
+
+31 mem 1 1 syscall3
+
+// not equal
+69 69 != dump
+420 69 != dump
