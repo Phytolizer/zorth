@@ -192,9 +192,9 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         }
     }
     try w.writeAll(
-        \\mov rdi, 0
-        \\mov rax, 60
-        \\syscall
+        \\    mov rdi, 0
+        \\    mov rax, 60
+        \\    syscall
         \\
     );
 }
