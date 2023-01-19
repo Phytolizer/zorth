@@ -24,6 +24,7 @@ const Op = struct {
         DUP,
         DUP2,
         SWAP,
+        DROP,
         GT,
         LT,
         WHILE,
@@ -149,6 +150,10 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 const x = try pop(&stack);
                 try stack.append(y);
                 try stack.append(x);
+                ip += 1;
+            },
+            .DROP => {
+                _ = try pop(&stack);
                 ip += 1;
             },
             .GT => {
@@ -333,6 +338,10 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rax
                 \\
             ),
+            .DROP => try w.writeAll(
+                \\    pop rax
+                \\
+            ),
             .GT => try w.writeAll(
                 \\    mov rcx, 0
                 \\    mov rdx, 1
@@ -513,7 +522,9 @@ fn parseTokenAsOp(token: Token) !Op {
     } else if (streq(token.word, "2dup")) {
         return Op.init(.DUP2, token);
     } else if (streq(token.word, "swap")) {
-        return Op.init(.DUP2, token);
+        return Op.init(.SWAP, token);
+    } else if (streq(token.word, "drop")) {
+        return Op.init(.DROP, token);
     } else if (streq(token.word, "<")) {
         return Op.init(.LT, token);
     } else {
