@@ -23,6 +23,7 @@ const Op = struct {
         END: usize,
         DUP,
         DUP2,
+        SWAP,
         GT,
         LT,
         WHILE,
@@ -141,6 +142,13 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 try stack.append(y);
                 try stack.append(x);
                 try stack.append(y);
+                ip += 1;
+            },
+            .SWAP => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(y);
+                try stack.append(x);
                 ip += 1;
             },
             .GT => {
@@ -316,6 +324,13 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rbx
                 \\    push rax
                 \\    push rbx
+                \\
+            ),
+            .SWAP => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    push rbx
+                \\    push rax
                 \\
             ),
             .GT => try w.writeAll(
@@ -496,6 +511,8 @@ fn parseTokenAsOp(token: Token) !Op {
     } else if (streq(token.word, "syscall6")) {
         return Op.init(.SYSCALL6, token);
     } else if (streq(token.word, "2dup")) {
+        return Op.init(.DUP2, token);
+    } else if (streq(token.word, "swap")) {
         return Op.init(.DUP2, token);
     } else if (streq(token.word, "<")) {
         return Op.init(.LT, token);
