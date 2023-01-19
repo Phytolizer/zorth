@@ -177,12 +177,13 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     return try result.toOwnedSlice();
 }
 
-fn usage(program_name: []const u8) void {
-    std.debug.print(
+fn usage(writer: anytype, program_name: []const u8) !void {
+    try writer.print(
         \\Usage: {s} <SUBCOMMAND> [ARGS]
         \\SUBCOMMANDS:
         \\    sim <file>      Simulate the program
         \\    com <file>      Compile the program
+        \\    help            Print this help to stdout
         \\
     , .{program_name});
 }
@@ -209,9 +210,12 @@ pub fn run() !void {
     defer std.process.argsFree(a, orig_args);
     var args = orig_args;
 
+    const stderr = std.io.getStdErr().writer();
+    const stdout = std.io.getStdOut().writer();
+
     const program_name = uncons(&args);
     if (args.len < 1) {
-        usage(program_name);
+        try usage(stderr, program_name);
         std.log.err("no subcommand provided", .{});
         return error.Usage;
     }
@@ -219,7 +223,7 @@ pub fn run() !void {
     const subcommand = uncons(&args);
     if (streq(subcommand, "sim")) {
         if (args.len < 1) {
-            usage(program_name);
+            try usage(stderr, program_name);
             std.log.err("no input file provided for simulation", .{});
             return error.Usage;
         }
@@ -229,7 +233,7 @@ pub fn run() !void {
         try simulateProgram(program);
     } else if (streq(subcommand, "com")) {
         if (args.len < 1) {
-            usage(program_name);
+            try usage(stderr, program_name);
             std.log.err("no input file provided for compilation", .{});
             return error.Usage;
         }
@@ -237,8 +241,11 @@ pub fn run() !void {
         const program = try loadProgramFromFile(program_path);
         defer a.free(program);
         try compileProgram(program);
+    } else if (streq(subcommand, "help")) {
+        try usage(stdout, program_name);
+        return;
     } else {
-        usage(program_name);
+        try usage(stderr, program_name);
         std.log.err("unknown subcommand '{s}'", .{subcommand});
         return error.Usage;
     }
