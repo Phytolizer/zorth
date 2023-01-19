@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn runCmd(a: std.mem.Allocator, argv: []const []const u8, options: anytype) !void {
+pub fn runCmd(a: std.mem.Allocator, argv: []const []const u8, options: anytype) !u8 {
     std.debug.print("cmd:", .{});
     for (argv) |arg| {
         std.debug.print(" '{s}'", .{arg});
@@ -21,12 +21,18 @@ pub fn runCmd(a: std.mem.Allocator, argv: []const []const u8, options: anytype) 
             break :run try child.spawnAndWait();
         }
     };
+    const fail_ok = if (@hasField(@TypeOf(options), "fail_ok")) options.fail_ok else false;
     const was_ok = switch (result) {
-        .Exited => |code| code == 0,
+        .Exited => |code| if (fail_ok)
+            // early return
+            return code
+        else
+            code == 0,
         else => false,
     };
     if (!was_ok) {
         std.log.err("command {s} exited with error", .{argv[0]});
         return error.Cmd;
     }
+    return 0;
 }

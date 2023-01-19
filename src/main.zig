@@ -617,7 +617,7 @@ fn uncons(argv: []const []const u8, i: *usize) []const u8 {
     return first;
 }
 
-pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !u8 {
     g_a = a;
     var i: usize = 0;
 
@@ -695,31 +695,32 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         try compileProgram(program, src_path);
         const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
         defer a.free(obj_path);
-        try common.runCmd(a, &.{ "nasm", "-f", "elf64", src_path, "-o", obj_path }, .{});
+        _ = try common.runCmd(a, &.{ "nasm", "-f", "elf64", src_path, "-o", obj_path }, .{});
         const exe_path = try std.fs.path.join(a, &.{ basedir, basename });
         defer a.free(exe_path);
-        try common.runCmd(a, &.{ "ld", "-o", exe_path, obj_path }, .{});
+        _ = try common.runCmd(a, &.{ "ld", "-o", exe_path, obj_path }, .{});
         if (do_run) {
-            try common.runCmd(a, &.{exe_path}, .{ .stdout = stdout });
+            return try common.runCmd(a, &.{exe_path}, .{ .stdout = stdout, .fail_ok = true });
         }
     } else if (streq(subcommand, "help")) {
         try usage(stdout, program_name);
-        return;
+        return 0;
     } else {
         try usage(stderr, program_name);
         std.log.err("unknown subcommand '{s}'", .{subcommand});
         return error.Usage;
     }
+    return 0;
 }
 
-fn run() !void {
+fn run() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.detectLeaks();
     const a = gpa.allocator();
     const orig_args = try std.process.argsAlloc(a);
     defer std.process.argsFree(a, orig_args);
 
-    try driver(
+    return try driver(
         a,
         orig_args,
         std.io.getStdOut().writer(),
@@ -728,5 +729,6 @@ fn run() !void {
 }
 
 pub fn main() void {
-    run() catch std.process.exit(1);
+    const result = run() catch std.process.exit(1);
+    std.process.exit(result);
 }

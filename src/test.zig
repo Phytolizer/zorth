@@ -19,11 +19,11 @@ pub fn main() !void {
             var sim_output_arr = std.ArrayList(u8).init(a);
             defer sim_output_arr.deinit();
             var sim_output = sim_output_arr.writer();
-            try zorth.driver(a, &.{ "zorth", "sim", real_path }, sim_output, std.io.null_writer);
+            _ = try zorth.driver(a, &.{ "zorth", "sim", real_path }, sim_output, std.io.null_writer);
             var com_output_arr = std.ArrayList(u8).init(a);
             defer com_output_arr.deinit();
             var com_output = com_output_arr.writer();
-            try zorth.driver(a, &.{ "zorth", "com", "-r", real_path }, com_output, std.io.null_writer);
+            _ = try zorth.driver(a, &.{ "zorth", "com", "-r", real_path }, com_output, std.io.null_writer);
             if (!std.mem.eql(u8, sim_output_arr.items, com_output_arr.items)) {
                 std.log.err("failed", .{});
                 std.debug.print("sim output:\n{s}\n", .{sim_output_arr.items});
