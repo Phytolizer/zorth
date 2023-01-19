@@ -656,22 +656,28 @@ const Token = struct {
     file_path: []const u8,
     row: usize,
     col: usize,
-    word: []const u8,
+    type: Type,
+
+    const Type = union(enum) {
+        word: []const u8,
+        int: i64,
+    };
 };
 
 fn parseTokenAsOp(token: Token) !Op {
-    errdefer |e| {
-        std.debug.print("{s}:{d}:{d}: {s}\n", .{
-            token.file_path,
-            token.row,
-            token.col,
-            @errorName(e),
-        });
-    }
-    if (BUILTIN_WORDS.get(token.word)) |code| {
-        return Op.init(code, token);
-    } else {
-        return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
+    switch (token.type) {
+        .word => |word| if (BUILTIN_WORDS.get(word)) |code| {
+            return Op.init(code, token);
+        } else {
+            std.debug.print("{s}:{d}:{d}: unknown word {s}\n", .{
+                token.file_path,
+                token.row,
+                token.col,
+                word,
+            });
+            return error.Parse;
+        },
+        .int => |i| return Op.init(.{ .PUSH = i }, token),
     }
 }
 
@@ -775,6 +781,14 @@ const Lexer = struct {
         };
     }
 
+    fn lexWord(text: []const u8) Token.Type {
+        if (std.fmt.parseInt(i64, text, 10)) |i| {
+            return .{ .int = i };
+        } else |_| {
+            return .{ .word = text };
+        }
+    }
+
     pub fn next(self: *@This()) ?Token {
         while (true) {
             const maybe_col = indexOfNonePos(u8, self.line, self.col, &std.ascii.whitespace);
@@ -784,7 +798,7 @@ const Lexer = struct {
                     .file_path = self.file_path,
                     .row = self.row + 1,
                     .col = col + 1,
-                    .word = self.line[col..col_end],
+                    .type = lexWord(self.line[col..col_end]),
                 };
                 self.col = col_end;
                 return result;
