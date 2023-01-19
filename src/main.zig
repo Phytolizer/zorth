@@ -421,9 +421,12 @@ fn usage(writer: anytype, program_name: []const u8) !void {
     try writer.print(
         \\Usage: {s} <SUBCOMMAND> [ARGS]
         \\SUBCOMMANDS:
-        \\    sim <file>            Simulate the program
-        \\    com [-r] <file>       Compile the program
-        \\    help                  Print this help to stdout
+        \\  sim <file>                 Simulate the program
+        \\  com [OPTIONS] <file>       Compile the program
+        \\    OPTIONS:
+        \\      -r                       Run the program after compilation
+        \\      -o <file|dir>            Set the output path
+        \\  help                       Print this help to stdout
         \\
     , .{program_name});
 }
@@ -474,12 +477,20 @@ pub fn run() !void {
     } else if (streq(subcommand, "com")) {
         var do_run = false;
         var maybe_program_path: ?[]const u8 = null;
+        var maybe_output_path: ?[]const u8 = null;
         while (args.len > 0) {
-            const flag = uncons(&args);
-            if (streq(flag, "-r")) {
+            const arg = uncons(&args);
+            if (streq(arg, "-r")) {
                 do_run = true;
+            } else if (streq(arg, "-o")) {
+                if (args.len == 0) {
+                    try usage(stderr, program_name);
+                    std.log.err("argument for `-o` not provided", .{});
+                    return error.Usage;
+                }
+                maybe_output_path = uncons(&args);
             } else {
-                maybe_program_path = flag;
+                maybe_program_path = arg;
                 break;
             }
         }
@@ -495,6 +506,19 @@ pub fn run() !void {
         if (streq(extension, ".zorth")) {
             basename = basename[0 .. basename.len - ".zorth".len];
         }
+        var basedir = std.fs.path.dirname(program_path) orelse ".";
+        if (maybe_output_path) |output_path| {
+            const is_dir = if (std.fs.cwd().statFile(output_path)) |status|
+                status.kind == .Directory
+            else |_|
+                false;
+            if (is_dir) {
+                basedir = output_path;
+            } else {
+                basename = std.fs.path.basename(output_path);
+                basedir = std.fs.path.dirname(output_path) orelse ".";
+            }
+        }
         const src_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".nasm" });
         defer a.free(src_path);
         std.log.info("Generating {s}", .{src_path});
@@ -502,8 +526,7 @@ pub fn run() !void {
         const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
         defer a.free(obj_path);
         try runCmd(&.{ "nasm", "-f", "elf64", src_path, "-o", obj_path });
-        const dirname = std.fs.path.dirname(program_path) orelse ".";
-        const exe_path = try std.fs.path.join(a, &.{ dirname, basename });
+        const exe_path = try std.fs.path.join(a, &.{ basedir, basename });
         defer a.free(exe_path);
         try runCmd(&.{ "ld", "-o", exe_path, obj_path });
         if (do_run) {
