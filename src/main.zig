@@ -82,7 +82,7 @@ var temp_dir: std.fs.Dir = undefined;
 var temp_path: []const u8 = undefined;
 
 fn runCmd(argv: []const []const u8) !void {
-    std.debug.print("[cmd]", .{});
+    std.debug.print("cmd:", .{});
     for (argv) |arg| {
         std.debug.print(" '{s}'", .{arg});
     }
@@ -241,6 +241,7 @@ pub fn run() !void {
         }
         const src_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".nasm" });
         defer a.free(src_path);
+        std.debug.print("Generating {s}...\n", .{src_path});
         try compileProgram(program, src_path);
         const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
         defer a.free(obj_path);
