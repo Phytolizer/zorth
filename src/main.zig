@@ -421,9 +421,9 @@ fn usage(writer: anytype, program_name: []const u8) !void {
     try writer.print(
         \\Usage: {s} <SUBCOMMAND> [ARGS]
         \\SUBCOMMANDS:
-        \\    sim <file>      Simulate the program
-        \\    com <file>      Compile the program
-        \\    help            Print this help to stdout
+        \\    sim <file>            Simulate the program
+        \\    com [-r] <file>       Compile the program
+        \\    help                  Print this help to stdout
         \\
     , .{program_name});
 }
@@ -472,12 +472,22 @@ pub fn run() !void {
         defer a.free(program);
         try simulateProgram(program);
     } else if (streq(subcommand, "com")) {
-        if (args.len < 1) {
+        var do_run = false;
+        var maybe_program_path: ?[]const u8 = null;
+        while (args.len > 0) {
+            const flag = uncons(&args);
+            if (streq(flag, "-r")) {
+                do_run = true;
+            } else {
+                maybe_program_path = flag;
+                break;
+            }
+        }
+        const program_path = maybe_program_path orelse {
             try usage(stderr, program_name);
             std.log.err("no input file provided for compilation", .{});
             return error.Usage;
-        }
-        const program_path = uncons(&args);
+        };
         const program = try loadProgramFromFile(program_path);
         defer a.free(program);
         var basename = std.fs.path.basename(program_path);
@@ -496,6 +506,9 @@ pub fn run() !void {
         const exe_path = try std.fs.path.join(a, &.{ dirname, basename });
         defer a.free(exe_path);
         try runCmd(&.{ "ld", "-o", exe_path, obj_path });
+        if (do_run) {
+            try runCmd(&.{exe_path});
+        }
     } else if (streq(subcommand, "help")) {
         try usage(stdout, program_name);
         return;
