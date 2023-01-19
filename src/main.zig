@@ -330,7 +330,11 @@ fn resolveJumps(program: []Op) !void {
                         try stack.append(ip);
                     },
                     else => {
-                        std.log.err("`else` without `if`", .{});
+                        const loc = program[if_ip].loc;
+                        std.debug.print(
+                            "{s}:{d}:{d}: error: `else` without `if`\n",
+                            .{ loc.file_path, loc.row, loc.col },
+                        );
                         return error.Parse;
                     },
                 }
@@ -352,13 +356,27 @@ fn resolveJumps(program: []Op) !void {
                         dest.* = ip + 1;
                     },
                     else => {
-                        std.log.err("`end` without `if`/`do`", .{});
+                        const loc = program[block_ip].loc;
+                        std.debug.print(
+                            "{s}:{d}:{d}: error: `end` without `if`/`do`\n",
+                            .{ loc.file_path, loc.row, loc.col },
+                        );
                         return error.Parse;
                     },
                 }
             },
             else => {},
         }
+    }
+
+    if (stack.items.len > 0) {
+        const top = pop(&stack) catch unreachable;
+        const loc = program[top].loc;
+        std.debug.print(
+            "{s}:{d}:{d}: error: unclosed block\n",
+            .{ loc.file_path, loc.row, loc.col },
+        );
+        return error.Parse;
     }
 }
 
@@ -432,6 +450,7 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
         try ops.append(try parseTokenAsOp(token));
     }
     var result = try ops.toOwnedSlice();
+    errdefer a.free(result);
     try resolveJumps(result);
     return result;
 }
