@@ -25,7 +25,8 @@ dump:
     neg     rcx
     jmp     .done
 .iszero:
-    mov     ecx, 1
+    mov     byte [rsp + 30], '0'
+    mov     ecx, 2
 .done:
     mov     rsi, rsp
     sub     rsi, rcx
