@@ -369,12 +369,19 @@ const Lexer = struct {
     lines: std.mem.SplitIterator(u8),
     line: []const u8,
 
+    fn trimComment(line: []const u8) []const u8 {
+        return if (std.mem.indexOf(u8, line, "//")) |comment_start|
+            line[0..comment_start]
+        else
+            line;
+    }
+
     pub fn init(file_path: []const u8, source: []const u8) @This() {
         var lines = std.mem.split(u8, source, &.{'\n'});
         return .{
             .file_path = file_path,
             .source = source,
-            .line = lines.first(),
+            .line = trimComment(lines.first()),
             .lines = lines,
         };
     }
@@ -393,7 +400,7 @@ const Lexer = struct {
                 self.col = col_end;
                 return result;
             } else if (self.lines.next()) |next_line| {
-                self.line = next_line;
+                self.line = trimComment(next_line);
                 self.col = 0;
                 self.row += 1;
             } else {
