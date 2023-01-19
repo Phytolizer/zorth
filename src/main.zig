@@ -241,7 +241,7 @@ pub fn run() !void {
         }
         const src_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".nasm" });
         defer a.free(src_path);
-        std.debug.print("Generating {s}...\n", .{src_path});
+        std.log.info("Generating {s}", .{src_path});
         try compileProgram(program, src_path);
         const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
         defer a.free(obj_path);
