@@ -17,10 +17,7 @@ const Op = struct {
 
     const Code = union(enum) {
         PUSH_INT: i64,
-        PUSH_STR: struct {
-            text: []u8,
-            addr: ?usize = null,
-        },
+        PUSH_STR: []u8,
         PLUS,
         MINUS,
         MOD,
@@ -87,7 +84,7 @@ const Op = struct {
     pub fn deinit(self: @This()) void {
         switch (self.code) {
             .PUSH_STR => |s| {
-                g_a.free(s.text);
+                g_a.free(s);
             },
             else => {},
         }
@@ -157,6 +154,8 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
     defer stack.deinit();
     var ip: usize = 0;
     var mem = try g_a.alloc(u8, STR_CAPACITY + MEM_CAPACITY);
+    var str_offsets = std.AutoHashMap(usize, usize).init(g_a);
+    defer str_offsets.deinit();
     var str_size: usize = 0;
     defer g_a.free(mem);
     while (ip < program.len) {
@@ -170,15 +169,16 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 try stack.append(x);
                 ip += 1;
             },
-            .PUSH_STR => |*s| {
-                try stack.append(@intCast(i64, s.text.len));
-                if (s.addr) |addr| {
-                    try stack.append(@intCast(i64, addr));
+            .PUSH_STR => |s| {
+                try stack.append(@intCast(i64, s.len));
+                if (str_offsets.get(ip)) |offset| {
+                    try stack.append(@intCast(i64, offset));
                 } else {
-                    s.addr = str_size;
-                    std.mem.copy(u8, mem[str_size .. str_size + s.text.len], s.text);
-                    str_size += s.text.len;
-                    try stack.append(@intCast(i64, s.addr.?));
+                    const offset = str_size;
+                    try str_offsets.put(ip, offset);
+                    std.mem.copy(u8, mem[str_size .. str_size + s.len], s);
+                    str_size += s.len;
+                    try stack.append(@intCast(i64, offset));
                 }
                 ip += 1;
             },
@@ -424,8 +424,8 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                     \\    push rax
                     \\    push zorth_str_{d}
                     \\
-                , .{ s.text.len, strs.items.len });
-                try strs.append(s.text);
+                , .{ s.len, strs.items.len });
+                try strs.append(s);
             },
             .PLUS => try w.writeAll(
                 \\    pop rbx
@@ -729,7 +729,7 @@ fn parseTokenAsOp(token: Token) !Op {
             return error.Parse;
         },
         .str => |s| return Op.init(.{
-            .PUSH_STR = .{ .text = try unesc(s) },
+            .PUSH_STR = try unesc(s),
         }, token),
         .int => |i| return Op.init(.{ .PUSH_INT = i }, token),
     }
