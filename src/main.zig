@@ -30,17 +30,6 @@ const COUNT_OPS = @typeInfo(Op).Union.fields.len;
 
 var a: std.mem.Allocator = undefined;
 
-const PROGRAM = [_]Op{
-    .{ .PUSH = 34 },
-    .{ .PUSH = 35 },
-    .PLUS,
-    .DUMP,
-    .{ .PUSH = 500 },
-    .{ .PUSH = 80 },
-    .MINUS,
-    .DUMP,
-};
-
 fn notImplemented() noreturn {
     std.log.err("not implemented", .{});
     unreachable;
@@ -150,7 +139,7 @@ fn compileProgram(program: []const Op) !void {
             }
         }
         try w.writeAll(
-            \\pop rdi
+            \\mov rdi, 0
             \\mov rax, 60
             \\syscall
             \\
@@ -163,25 +152,49 @@ fn compileProgram(program: []const Op) !void {
     const obj_path = try std.fs.path.join(a, &.{ temp_path, "out.o" });
     defer a.free(obj_path);
     try runCmd(&.{ "nasm", "-f", "elf64", src_path, "-o", obj_path });
-    try runCmd(&.{ "ld", "-o", obj_path[0 .. obj_path.len - 2], obj_path });
+    try runCmd(&.{ "ld", "-o", "output", obj_path });
 }
 
-pub fn main() void {
-    run() catch std.process.exit(1);
+fn parseWordAsOp(word: []const u8) !Op {
+    return if (streq(word, "+"))
+        .PLUS
+    else if (streq(word, "-"))
+        .MINUS
+    else if (streq(word, "."))
+        .DUMP
+    else .{ .PUSH = try std.fmt.parseInt(i64, word, 10) };
+}
+
+fn loadProgramFromFile(path: []const u8) ![]Op {
+    const contents = try std.fs.cwd().readFileAlloc(a, path, std.math.maxInt(usize));
+    defer a.free(contents);
+    var splitter = std.mem.tokenize(u8, contents, &std.ascii.whitespace);
+    var result = std.ArrayList(Op).init(a);
+    errdefer result.deinit();
+    while (splitter.next()) |token| {
+        try result.append(try parseWordAsOp(token));
+    }
+    return try result.toOwnedSlice();
 }
 
 fn usage(program_name: []const u8) void {
     std.debug.print(
         \\Usage: {s} <SUBCOMMAND> [ARGS]
         \\SUBCOMMANDS:
-        \\    sim           Simulate the program
-        \\    com           Compile the program
+        \\    sim <file>      Simulate the program
+        \\    com <file>      Compile the program
         \\
     , .{program_name});
 }
 
 fn streq(x: []const u8, y: []const u8) bool {
     return std.mem.eql(u8, x, y);
+}
+
+fn uncons(argv: *[][]const u8) []const u8 {
+    const first = argv.*[0];
+    argv.* = argv.*[1..];
+    return first;
 }
 
 pub fn run() !void {
@@ -192,23 +205,45 @@ pub fn run() !void {
     defer a.free(temp_path);
     temp_dir = try std.fs.cwd().makeOpenPath(temp_path, .{});
     defer temp_dir.close();
-    const args = try std.process.argsAlloc(a);
-    defer std.process.argsFree(a, args);
+    const orig_args = try std.process.argsAlloc(a);
+    defer std.process.argsFree(a, orig_args);
+    var args = orig_args;
 
-    if (args.len < 2) {
-        usage(args[0]);
+    const program_name = uncons(&args);
+    if (args.len < 1) {
+        usage(program_name);
         std.log.err("no subcommand provided", .{});
         return error.Usage;
     }
 
-    const subcommand = args[1];
+    const subcommand = uncons(&args);
     if (streq(subcommand, "sim")) {
-        try simulateProgram(&PROGRAM);
+        if (args.len < 1) {
+            usage(program_name);
+            std.log.err("no input file provided for simulation", .{});
+            return error.Usage;
+        }
+        const program_path = uncons(&args);
+        const program = try loadProgramFromFile(program_path);
+        defer a.free(program);
+        try simulateProgram(program);
     } else if (streq(subcommand, "com")) {
-        try compileProgram(&PROGRAM);
+        if (args.len < 1) {
+            usage(program_name);
+            std.log.err("no input file provided for compilation", .{});
+            return error.Usage;
+        }
+        const program_path = uncons(&args);
+        const program = try loadProgramFromFile(program_path);
+        defer a.free(program);
+        try compileProgram(program);
     } else {
-        usage(args[0]);
+        usage(program_name);
         std.log.err("unknown subcommand '{s}'", .{subcommand});
         return error.Usage;
     }
+}
+
+pub fn main() void {
+    run() catch std.process.exit(1);
 }
