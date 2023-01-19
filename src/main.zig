@@ -729,10 +729,28 @@ fn parseTokenAsOp(token: Token) !Op {
             return error.Parse;
         },
         .str => |s| return Op.init(.{
-            .PUSH_STR = .{ .text = try g_a.dupe(u8, s) },
+            .PUSH_STR = .{ .text = try unesc(s) },
         }, token),
         .int => |i| return Op.init(.{ .PUSH_INT = i }, token),
     }
+}
+
+fn unesc(s: []const u8) ![]u8 {
+    var result = try std.ArrayList(u8).initCapacity(g_a, s.len);
+    errdefer result.deinit();
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == '\\') {
+            i += 1;
+            switch (s[i]) {
+                'n' => try result.append('\n'),
+                else => std.debug.panic("unsupported escape '\\{c}'", .{s[i]}),
+            }
+        } else {
+            try result.append(s[i]);
+        }
+    }
+    return try result.toOwnedSlice();
 }
 
 fn resolveJumps(program: []Op) !void {
