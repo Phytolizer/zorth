@@ -28,4 +28,25 @@ pub fn build(b: *std.build.Builder) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const tests = b.addExecutable("zorth-test", "src/test.zig");
+    tests.setTarget(target);
+    tests.setBuildMode(mode);
+    for (pkgs) |p| {
+        tests.addPackage(p);
+    }
+    tests.addPackage(.{
+        .name = "zorth",
+        .dependencies = &pkgs,
+        .source = .{ .path = "src/main.zig" },
+    });
+
+    const tests_run_cmd = tests.run();
+    tests_run_cmd.step.dependOn(&tests.step);
+    if (b.args) |args| {
+        tests_run_cmd.addArgs(args);
+    }
+
+    const tests_run_step = b.step("test", "Test the app");
+    tests_run_step.dependOn(&tests_run_cmd.step);
 }

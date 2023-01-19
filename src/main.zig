@@ -1,5 +1,6 @@
 const std = @import("std");
 const known_folders = @import("known-folders");
+const common = @import("common.zig");
 
 const Op = struct {
     code: Code,
@@ -41,18 +42,18 @@ const Op = struct {
         fn tagName(self: @This()) []const u8 {
             return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
         }
-
-        pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-            switch (self) {
-                .PUSH => |x| try writer.print("{s} {d}", .{ tagName(self), x }),
-                else => try writer.writeAll(tagName(self)),
-            }
-        }
     };
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self.code) {
+            .PUSH => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
+            else => try writer.writeAll(Code.tagName(self.code)),
+        }
+    }
     const COUNT_OPS = @typeInfo(Op).Union.fields.len;
 };
 
-var a: std.mem.Allocator = undefined;
+var g_a: std.mem.Allocator = undefined;
 
 fn notImplemented() noreturn {
     std.log.err("not implemented", .{});
@@ -70,8 +71,8 @@ fn pop(stack: anytype) !@typeInfo(@TypeOf(stack.items)).Pointer.child {
     return stack.popOrNull() orelse return error.StackUnderflow;
 }
 
-fn simulateProgram(program: []const Op) !void {
-    var stack = std.ArrayList(i64).init(a);
+fn simulateProgram(program: []const Op, stdout: anytype) !void {
+    var stack = std.ArrayList(i64).init(g_a);
     defer stack.deinit();
     var ip: usize = 0;
     while (ip < program.len) {
@@ -135,7 +136,7 @@ fn simulateProgram(program: []const Op) !void {
             },
             .DUMP => {
                 const x = try pop(&stack);
-                std.debug.print("{d}\n", .{x});
+                try stdout.print("{d}\n", .{x});
                 ip += 1;
             },
         }
@@ -143,31 +144,13 @@ fn simulateProgram(program: []const Op) !void {
 }
 
 fn temp() ![]const u8 {
-    const cacheDir = try known_folders.getPath(a, .cache);
-    defer if (cacheDir) |cd| a.free(cd);
-    return try std.fs.path.join(a, &.{ cacheDir orelse ".", "zorth", "intermediate" });
+    const cacheDir = try known_folders.getPath(g_a, .cache);
+    defer if (cacheDir) |cd| g_a.free(cd);
+    return try std.fs.path.join(g_a, &.{ cacheDir orelse ".", "zorth", "intermediate" });
 }
 
 var temp_dir: std.fs.Dir = undefined;
 var temp_path: []const u8 = undefined;
-
-fn runCmd(argv: []const []const u8) !void {
-    std.debug.print("cmd:", .{});
-    for (argv) |arg| {
-        std.debug.print(" '{s}'", .{arg});
-    }
-    std.debug.print("\n", .{});
-    var child = std.ChildProcess.init(argv, a);
-    const result = try child.spawnAndWait();
-    const was_ok = switch (result) {
-        .Exited => |code| code == 0,
-        else => false,
-    };
-    if (!was_ok) {
-        std.log.err("command {s} exited with error", .{argv[0]});
-        return error.Cmd;
-    }
-}
 
 fn compileProgram(program: []const Op, out_path: []const u8) !void {
     const dump = @embedFile("dump.nasm");
@@ -317,7 +300,7 @@ fn parseTokenAsOp(token: Token) !Op {
 }
 
 fn resolveJumps(program: []Op) !void {
-    var stack = std.ArrayList(usize).init(a);
+    var stack = std.ArrayList(usize).init(g_a);
     defer stack.deinit();
     for (program) |*op, ip| {
         switch (op.code) {
@@ -441,16 +424,16 @@ const Lexer = struct {
 };
 
 fn loadProgramFromFile(path: []const u8) ![]Op {
-    const contents = try std.fs.cwd().readFileAlloc(a, path, std.math.maxInt(usize));
-    defer a.free(contents);
+    const contents = try std.fs.cwd().readFileAlloc(g_a, path, std.math.maxInt(usize));
+    defer g_a.free(contents);
     var lexer = Lexer.init(path, contents);
-    var ops = std.ArrayList(Op).init(a);
+    var ops = std.ArrayList(Op).init(g_a);
     errdefer ops.deinit();
     while (lexer.next()) |token| {
         try ops.append(try parseTokenAsOp(token));
     }
     var result = try ops.toOwnedSlice();
-    errdefer a.free(result);
+    errdefer g_a.free(result);
     try resolveJumps(result);
     return result;
 }
@@ -473,51 +456,45 @@ fn streq(x: []const u8, y: []const u8) bool {
     return std.mem.eql(u8, x, y);
 }
 
-fn uncons(argv: *[][]const u8) []const u8 {
-    const first = argv.*[0];
-    argv.* = argv.*[1..];
+fn uncons(argv: []const []const u8, i: *usize) []const u8 {
+    const first = argv[i.*];
+    i.* += 1;
     return first;
 }
 
-pub fn run() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.detectLeaks();
-    a = gpa.allocator();
+pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !void {
+    g_a = a;
+    var i: usize = 0;
+
     temp_path = try temp();
     defer a.free(temp_path);
     temp_dir = try std.fs.cwd().makeOpenPath(temp_path, .{});
     defer temp_dir.close();
-    const orig_args = try std.process.argsAlloc(a);
-    defer std.process.argsFree(a, orig_args);
-    var args = orig_args;
 
-    const stderr = std.io.getStdErr().writer();
-    const stdout = std.io.getStdOut().writer();
-
-    const program_name = uncons(&args);
+    const program_name = uncons(args, &i);
     if (args.len < 1) {
         try usage(stderr, program_name);
         std.log.err("no subcommand provided", .{});
         return error.Usage;
     }
 
-    const subcommand = uncons(&args);
+    const subcommand = uncons(args, &i);
     if (streq(subcommand, "sim")) {
         if (args.len < 1) {
             try usage(stderr, program_name);
             std.log.err("no input file provided for simulation", .{});
             return error.Usage;
         }
-        const program_path = uncons(&args);
+        const program_path = uncons(args, &i);
         const program = try loadProgramFromFile(program_path);
         defer a.free(program);
-        try simulateProgram(program);
+        try simulateProgram(program, stdout);
     } else if (streq(subcommand, "com")) {
         var do_run = false;
         var maybe_program_path: ?[]const u8 = null;
         var maybe_output_path: ?[]const u8 = null;
         while (args.len > 0) {
-            const arg = uncons(&args);
+            const arg = uncons(args, &i);
             if (streq(arg, "-r")) {
                 do_run = true;
             } else if (streq(arg, "-o")) {
@@ -526,7 +503,7 @@ pub fn run() !void {
                     std.log.err("argument for `-o` not provided", .{});
                     return error.Usage;
                 }
-                maybe_output_path = uncons(&args);
+                maybe_output_path = uncons(args, &i);
             } else {
                 maybe_program_path = arg;
                 break;
@@ -563,12 +540,12 @@ pub fn run() !void {
         try compileProgram(program, src_path);
         const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
         defer a.free(obj_path);
-        try runCmd(&.{ "nasm", "-f", "elf64", src_path, "-o", obj_path });
+        try common.runCmd(a, &.{ "nasm", "-f", "elf64", src_path, "-o", obj_path }, .{});
         const exe_path = try std.fs.path.join(a, &.{ basedir, basename });
         defer a.free(exe_path);
-        try runCmd(&.{ "ld", "-o", exe_path, obj_path });
+        try common.runCmd(a, &.{ "ld", "-o", exe_path, obj_path }, .{});
         if (do_run) {
-            try runCmd(&.{exe_path});
+            try common.runCmd(a, &.{exe_path}, .{ .stdout = stdout });
         }
     } else if (streq(subcommand, "help")) {
         try usage(stdout, program_name);
@@ -578,6 +555,21 @@ pub fn run() !void {
         std.log.err("unknown subcommand '{s}'", .{subcommand});
         return error.Usage;
     }
+}
+
+fn run() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.detectLeaks();
+    const a = gpa.allocator();
+    const orig_args = try std.process.argsAlloc(a);
+    defer std.process.argsFree(a, orig_args);
+
+    try driver(
+        a,
+        orig_args,
+        std.io.getStdOut().writer(),
+        std.io.getStdErr().writer(),
+    );
 }
 
 pub fn main() void {
