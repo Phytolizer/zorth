@@ -8,9 +8,11 @@ const Op = union(enum) {
     EQUAL,
     IF: usize,
     ELSE: usize,
-    END,
+    END: usize,
     DUP,
     GT,
+    WHILE,
+    DO: usize,
     DUMP,
 
     const TAG_NAMES = init: {
@@ -95,8 +97,8 @@ fn simulateProgram(program: []const Op) !void {
             .ELSE => |dest| {
                 ip = dest;
             },
-            .END => {
-                ip += 1;
+            .END => |dest| {
+                ip = dest;
             },
             .DUP => {
                 const x = try pop(&stack);
@@ -108,6 +110,16 @@ fn simulateProgram(program: []const Op) !void {
                 const x = try pop(&stack);
                 try stack.append(@boolToInt(x > y));
                 ip += 1;
+            },
+            .WHILE => {
+                ip += 1;
+            },
+            .DO => |dest| {
+                const x = try pop(&stack);
+                ip = if (x == 0)
+                    dest
+                else
+                    ip + 1;
             },
             .DUMP => {
                 const x = try pop(&stack);
@@ -204,7 +216,12 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    jmp .zorth_addr_{d}
                 \\
             , .{dest}),
-            .END => {},
+            .END => |dest| {
+                if (dest != ip + 1) try w.print(
+                    \\    jmp .zorth_addr_{d}
+                    \\
+                , .{dest});
+            },
             .DUP => try w.writeAll(
                 \\    pop rax
                 \\    push rax
@@ -221,6 +238,13 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rcx
                 \\
             ),
+            .WHILE => {},
+            .DO => |dest| try w.print(
+                \\    pop rax
+                \\    test rax, rax
+                \\    jz .zorth_addr_{d}
+                \\
+            , .{dest}),
             .DUMP => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
@@ -263,11 +287,15 @@ fn parseTokenAsOp(token: Token) !Op {
     } else if (streq(token.word, "else")) {
         return .{ .ELSE = undefined };
     } else if (streq(token.word, "end")) {
-        return .END;
+        return .{ .END = undefined };
     } else if (streq(token.word, "dup")) {
         return .DUP;
     } else if (streq(token.word, ">")) {
         return .GT;
+    } else if (streq(token.word, "while")) {
+        return .WHILE;
+    } else if (streq(token.word, "do")) {
+        return .{ .DO = undefined };
     } else if (streq(token.word, ".")) {
         return .DUMP;
     } else {
@@ -278,9 +306,9 @@ fn parseTokenAsOp(token: Token) !Op {
 fn resolveJumps(program: []Op) !void {
     var stack = std.ArrayList(usize).init(a);
     defer stack.deinit();
-    for (program) |op, ip| {
-        switch (op) {
-            .IF => try stack.append(ip),
+    for (program) |*op, ip| {
+        switch (op.*) {
+            .IF, .WHILE => try stack.append(ip),
             .ELSE => {
                 const if_ip = try pop(&stack);
                 switch (program[if_ip]) {
@@ -294,12 +322,24 @@ fn resolveJumps(program: []Op) !void {
                     },
                 }
             },
-            .END => {
+            .DO => |*dest| {
+                const while_ip = try pop(&stack);
+                dest.* = while_ip;
+                try stack.append(ip);
+            },
+            .END => |*end_dest| {
                 const block_ip = try pop(&stack);
                 switch (program[block_ip]) {
-                    .IF, .ELSE => |*dest| dest.* = ip,
+                    .IF, .ELSE => |*dest| {
+                        dest.* = ip;
+                        end_dest.* = ip + 1;
+                    },
+                    .DO => |*dest| {
+                        end_dest.* = dest.*;
+                        dest.* = ip + 1;
+                    },
                     else => {
-                        std.log.err("`end` without `if`", .{});
+                        std.log.err("`end` without `if`/`do`", .{});
                         return error.Parse;
                     },
                 }
