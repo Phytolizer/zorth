@@ -43,7 +43,7 @@ const Op = struct {
         MEM,
         LOAD,
         STORE,
-        DUMP,
+        PRINT,
         SYSCALL0,
         SYSCALL1,
         SYSCALL2,
@@ -79,6 +79,43 @@ const Op = struct {
 };
 
 const MEM_CAPACITY = 640_000;
+
+const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
+    .{ "+", .PLUS },
+    .{ "-", .MINUS },
+    .{ "mod", .MOD },
+    .{ "print", .PRINT },
+    .{ "=", .EQ },
+    .{ ">", .GT },
+    .{ "<", .LT },
+    .{ ">=", .GE },
+    .{ "<=", .LE },
+    .{ "!=", .NE },
+    .{ "shr", .SHR },
+    .{ "shl", .SHL },
+    .{ "bor", .BOR },
+    .{ "band", .BAND },
+    .{ "if", .{ .IF = undefined } },
+    .{ "end", .{ .END = undefined } },
+    .{ "else", .{ .ELSE = undefined } },
+    .{ "dup", .DUP },
+    .{ "2dup", .DUP2 },
+    .{ "swap", .SWAP },
+    .{ "drop", .DROP },
+    .{ "over", .OVER },
+    .{ "while", .WHILE },
+    .{ "do", .{ .DO = undefined } },
+    .{ "mem", .MEM },
+    .{ ".", .STORE },
+    .{ ",", .LOAD },
+    .{ "syscall0", .SYSCALL0 },
+    .{ "syscall1", .SYSCALL1 },
+    .{ "syscall2", .SYSCALL2 },
+    .{ "syscall3", .SYSCALL3 },
+    .{ "syscall4", .SYSCALL4 },
+    .{ "syscall5", .SYSCALL5 },
+    .{ "syscall6", .SYSCALL6 },
+});
 
 var g_a: std.mem.Allocator = undefined;
 
@@ -265,7 +302,7 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 mem[@intCast(usize, addr)] = @truncate(u8, @intCast(u63, value));
                 ip += 1;
             },
-            .DUMP => {
+            .PRINT => {
                 const x = try pop(&stack);
                 try stdout.print("{d}\n", .{x});
                 ip += 1;
@@ -533,7 +570,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    mov [rax], bl
                 \\
             ),
-            .DUMP => try w.writeAll(
+            .PRINT => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
                 \\
@@ -631,74 +668,8 @@ fn parseTokenAsOp(token: Token) !Op {
             @errorName(e),
         });
     }
-    if (streq(token.word, "+")) {
-        return Op.init(.PLUS, token);
-    } else if (streq(token.word, "-")) {
-        return Op.init(.MINUS, token);
-    } else if (streq(token.word, "mod")) {
-        return Op.init(.MOD, token);
-    } else if (streq(token.word, "shr")) {
-        return Op.init(.SHR, token);
-    } else if (streq(token.word, "shl")) {
-        return Op.init(.SHL, token);
-    } else if (streq(token.word, "bor")) {
-        return Op.init(.BOR, token);
-    } else if (streq(token.word, "band")) {
-        return Op.init(.BAND, token);
-    } else if (streq(token.word, "if")) {
-        return Op.init(.{ .IF = undefined }, token);
-    } else if (streq(token.word, "else")) {
-        return Op.init(.{ .ELSE = undefined }, token);
-    } else if (streq(token.word, "end")) {
-        return Op.init(.{ .END = undefined }, token);
-    } else if (streq(token.word, "dup")) {
-        return Op.init(.DUP, token);
-    } else if (streq(token.word, "=")) {
-        return Op.init(.EQ, token);
-    } else if (streq(token.word, "!=")) {
-        return Op.init(.NE, token);
-    } else if (streq(token.word, ">")) {
-        return Op.init(.GT, token);
-    } else if (streq(token.word, "<")) {
-        return Op.init(.LT, token);
-    } else if (streq(token.word, ">=")) {
-        return Op.init(.GE, token);
-    } else if (streq(token.word, "<=")) {
-        return Op.init(.LE, token);
-    } else if (streq(token.word, "while")) {
-        return Op.init(.WHILE, token);
-    } else if (streq(token.word, "do")) {
-        return Op.init(.{ .DO = undefined }, token);
-    } else if (streq(token.word, "print")) {
-        return Op.init(.DUMP, token);
-    } else if (streq(token.word, "mem")) {
-        return Op.init(.MEM, token);
-    } else if (streq(token.word, ".")) {
-        return Op.init(.STORE, token);
-    } else if (streq(token.word, ",")) {
-        return Op.init(.LOAD, token);
-    } else if (streq(token.word, "syscall0")) {
-        return Op.init(.SYSCALL0, token);
-    } else if (streq(token.word, "syscall1")) {
-        return Op.init(.SYSCALL1, token);
-    } else if (streq(token.word, "syscall2")) {
-        return Op.init(.SYSCALL2, token);
-    } else if (streq(token.word, "syscall3")) {
-        return Op.init(.SYSCALL3, token);
-    } else if (streq(token.word, "syscall4")) {
-        return Op.init(.SYSCALL4, token);
-    } else if (streq(token.word, "syscall5")) {
-        return Op.init(.SYSCALL5, token);
-    } else if (streq(token.word, "syscall6")) {
-        return Op.init(.SYSCALL6, token);
-    } else if (streq(token.word, "2dup")) {
-        return Op.init(.DUP2, token);
-    } else if (streq(token.word, "swap")) {
-        return Op.init(.SWAP, token);
-    } else if (streq(token.word, "drop")) {
-        return Op.init(.DROP, token);
-    } else if (streq(token.word, "over")) {
-        return Op.init(.OVER, token);
+    if (BUILTIN_WORDS.get(token.word)) |code| {
+        return Op.init(code, token);
     } else {
         return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }
