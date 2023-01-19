@@ -3,9 +3,13 @@ const known_folders = @import("known-folders");
 
 const Op = struct {
     code: Code,
+    loc: Token,
 
-    pub fn init(code: Code) @This() {
-        return .{ .code = code };
+    pub fn init(code: Code, loc: Token) @This() {
+        return .{
+            .code = code,
+            .loc = loc,
+        };
     }
 
     const Code = union(enum) {
@@ -286,29 +290,29 @@ fn parseTokenAsOp(token: Token) !Op {
         });
     }
     if (streq(token.word, "+")) {
-        return Op.init(.PLUS);
+        return Op.init(.PLUS, token);
     } else if (streq(token.word, "-")) {
-        return Op.init(.MINUS);
+        return Op.init(.MINUS, token);
     } else if (streq(token.word, "=")) {
-        return Op.init(.EQUAL);
+        return Op.init(.EQUAL, token);
     } else if (streq(token.word, "if")) {
-        return Op.init(.{ .IF = undefined });
+        return Op.init(.{ .IF = undefined }, token);
     } else if (streq(token.word, "else")) {
-        return Op.init(.{ .ELSE = undefined });
+        return Op.init(.{ .ELSE = undefined }, token);
     } else if (streq(token.word, "end")) {
-        return Op.init(.{ .END = undefined });
+        return Op.init(.{ .END = undefined }, token);
     } else if (streq(token.word, "dup")) {
-        return Op.init(.DUP);
+        return Op.init(.DUP, token);
     } else if (streq(token.word, ">")) {
-        return Op.init(.GT);
+        return Op.init(.GT, token);
     } else if (streq(token.word, "while")) {
-        return Op.init(.WHILE);
+        return Op.init(.WHILE, token);
     } else if (streq(token.word, "do")) {
-        return Op.init(.{ .DO = undefined });
+        return Op.init(.{ .DO = undefined }, token);
     } else if (streq(token.word, ".")) {
-        return Op.init(.DUMP);
+        return Op.init(.DUMP, token);
     } else {
-        return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) });
+        return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }
 }
 
