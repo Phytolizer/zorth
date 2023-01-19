@@ -18,6 +18,10 @@ const Op = struct {
         PLUS,
         MINUS,
         EQUAL,
+        SHR,
+        SHL,
+        BOR,
+        BAND,
         IF: usize,
         ELSE: usize,
         END: usize,
@@ -116,6 +120,30 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(@boolToInt(x == y));
+                ip += 1;
+            },
+            .SHR => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(x >> @intCast(u6, y));
+                ip += 1;
+            },
+            .SHL => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(x << @intCast(u6, y));
+                ip += 1;
+            },
+            .BOR => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(x | y);
+                ip += 1;
+            },
+            .BAND => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(x & y);
                 ip += 1;
             },
             .IF => |dest| {
@@ -298,6 +326,34 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    cmp rax, rbx
                 \\    cmove rcx, rdx
                 \\    push rcx
+                \\
+            ),
+            .SHR => try w.writeAll(
+                \\    pop rcx
+                \\    pop rbx
+                \\    shr rbx, cl
+                \\    push rbx
+                \\
+            ),
+            .SHL => try w.writeAll(
+                \\    pop rcx
+                \\    pop rbx
+                \\    shl rbx, cl
+                \\    push rbx
+                \\
+            ),
+            .BOR => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    or rax, rbx
+                \\    push rax
+                \\
+            ),
+            .BAND => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    and rax, rbx
+                \\    push rax
                 \\
             ),
             .IF => |dest| try w.print(
@@ -483,6 +539,14 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.MINUS, token);
     } else if (streq(token.word, "=")) {
         return Op.init(.EQUAL, token);
+    } else if (streq(token.word, "shr")) {
+        return Op.init(.SHR, token);
+    } else if (streq(token.word, "shl")) {
+        return Op.init(.SHL, token);
+    } else if (streq(token.word, "bor")) {
+        return Op.init(.BOR, token);
+    } else if (streq(token.word, "band")) {
+        return Op.init(.BAND, token);
     } else if (streq(token.word, "if")) {
         return Op.init(.{ .IF = undefined }, token);
     } else if (streq(token.word, "else")) {
