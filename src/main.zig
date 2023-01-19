@@ -25,6 +25,7 @@ const Op = struct {
         GT,
         WHILE,
         DO: usize,
+        MEM,
         DUMP,
 
         const TAG_NAMES = init: {
@@ -52,6 +53,8 @@ const Op = struct {
     }
     const COUNT_OPS = @typeInfo(Op).Union.fields.len;
 };
+
+const MEM_CAPACITY = 640_000;
 
 var g_a: std.mem.Allocator = undefined;
 
@@ -133,6 +136,9 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                     dest
                 else
                     ip + 1;
+            },
+            .MEM => {
+                std.debug.panic("TODO", .{});
             },
             .DUMP => {
                 const x = try pop(&stack);
@@ -240,6 +246,10 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    jz .zorth_addr_{d}
                 \\
             , .{dest}),
+            .MEM => try w.writeAll(
+                \\    push mem
+                \\
+            ),
             .DUMP => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
@@ -253,7 +263,10 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         \\    mov rax, 60
         \\    syscall
         \\
-    , .{program.len});
+        \\    section .bss
+        \\mem: resb {d}
+        \\
+    , .{ program.len, MEM_CAPACITY });
 }
 
 const Token = struct {
@@ -294,6 +307,8 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.{ .DO = undefined }, token);
     } else if (streq(token.word, ".")) {
         return Op.init(.DUMP, token);
+    } else if (streq(token.word, "mem")) {
+        return Op.init(.MEM, token);
     } else {
         return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }
