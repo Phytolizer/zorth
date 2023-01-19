@@ -9,6 +9,7 @@ const Op = union(enum) {
     IF: usize,
     ELSE: usize,
     END,
+    DUP,
     DUMP,
 
     const TAG_NAMES = init: {
@@ -94,6 +95,11 @@ fn simulateProgram(program: []const Op) !void {
                 ip = dest;
             },
             .END => {
+                ip += 1;
+            },
+            .DUP => {
+                const x = try pop(&stack);
+                try stack.appendNTimes(x, 2);
                 ip += 1;
             },
             .DUMP => {
@@ -192,6 +198,12 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\
             , .{dest}),
             .END => {},
+            .DUP => try w.writeAll(
+                \\    pop rax
+                \\    push rax
+                \\    push rax
+                \\
+            ),
             .DUMP => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
@@ -235,6 +247,8 @@ fn parseTokenAsOp(token: Token) !Op {
         return .{ .ELSE = undefined };
     } else if (streq(token.word, "end")) {
         return .END;
+    } else if (streq(token.word, "dup")) {
+        return .DUP;
     } else if (streq(token.word, ".")) {
         return .DUMP;
     } else {
