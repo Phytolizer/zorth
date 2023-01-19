@@ -149,24 +149,92 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
     );
 }
 
-fn parseWordAsOp(word: []const u8) !Op {
-    return if (streq(word, "+"))
+const Token = struct {
+    file_path: []const u8,
+    row: usize,
+    col: usize,
+    word: []const u8,
+};
+
+fn parseTokenAsOp(token: Token) !Op {
+    errdefer |e| {
+        std.debug.print("{s}:{d}:{d}: {s}\n", .{
+            token.file_path,
+            token.row,
+            token.col,
+            @errorName(e),
+        });
+    }
+    return if (streq(token.word, "+"))
         .PLUS
-    else if (streq(word, "-"))
+    else if (streq(token.word, "-"))
         .MINUS
-    else if (streq(word, "."))
+    else if (streq(token.word, "."))
         .DUMP
-    else .{ .PUSH = try std.fmt.parseInt(i64, word, 10) };
+    else .{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) };
 }
+
+fn indexOfNonePos(comptime T: type, slice: []const T, start_index: usize, values: []const T) ?usize {
+    var i: usize = start_index;
+    chars: while (i < slice.len) : (i += 1) {
+        for (values) |value| {
+            if (slice[i] == value) continue :chars;
+        }
+        return i;
+    }
+    return null;
+}
+
+const Lexer = struct {
+    file_path: []const u8,
+    row: usize = 0,
+    col: usize = 0,
+    source: []const u8,
+    lines: std.mem.SplitIterator(u8),
+    line: []const u8,
+
+    pub fn init(file_path: []const u8, source: []const u8) @This() {
+        var lines = std.mem.split(u8, source, &.{'\n'});
+        return .{
+            .file_path = file_path,
+            .source = source,
+            .line = lines.first(),
+            .lines = lines,
+        };
+    }
+
+    pub fn next(self: *@This()) ?Token {
+        while (true) {
+            const maybe_col = indexOfNonePos(u8, self.line, self.col, &std.ascii.whitespace);
+            if (maybe_col) |col| {
+                const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
+                const result = Token{
+                    .file_path = self.file_path,
+                    .row = self.row + 1,
+                    .col = col + 1,
+                    .word = self.line[col..col_end],
+                };
+                self.col = col_end;
+                return result;
+            } else if (self.lines.next()) |next_line| {
+                self.line = next_line;
+                self.col = 0;
+                self.row += 1;
+            } else {
+                return null;
+            }
+        }
+    }
+};
 
 fn loadProgramFromFile(path: []const u8) ![]Op {
     const contents = try std.fs.cwd().readFileAlloc(a, path, std.math.maxInt(usize));
     defer a.free(contents);
-    var splitter = std.mem.tokenize(u8, contents, &std.ascii.whitespace);
+    var lexer = Lexer.init(path, contents);
     var result = std.ArrayList(Op).init(a);
     errdefer result.deinit();
-    while (splitter.next()) |token| {
-        try result.append(try parseWordAsOp(token));
+    while (lexer.next()) |token| {
+        try result.append(try parseTokenAsOp(token));
     }
     return try result.toOwnedSlice();
 }
