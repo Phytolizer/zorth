@@ -29,8 +29,13 @@ const Op = struct {
         LOAD,
         STORE,
         DUMP,
+        SYSCALL0,
         SYSCALL1,
+        SYSCALL2,
         SYSCALL3,
+        SYSCALL4,
+        SYSCALL5,
+        SYSCALL6,
 
         const TAG_NAMES = init: {
             var result: []const []const u8 = &[_][]const u8{};
@@ -164,7 +169,13 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 try stdout.print("{d}\n", .{x});
                 ip += 1;
             },
+            .SYSCALL0 => {
+                return error.UnimplementedSyscall;
+            },
             .SYSCALL1 => {
+                return error.UnimplementedSyscall;
+            },
+            .SYSCALL2 => {
                 return error.UnimplementedSyscall;
             },
             .SYSCALL3 => {
@@ -187,6 +198,15 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                     else => return error.UnimplementedSyscall,
                 }
                 ip += 1;
+            },
+            .SYSCALL4 => {
+                return error.UnimplementedSyscall;
+            },
+            .SYSCALL5 => {
+                return error.UnimplementedSyscall;
+            },
+            .SYSCALL6 => {
+                return error.UnimplementedSyscall;
             },
         }
     }
@@ -311,9 +331,21 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    call dump
                 \\
             ),
+            .SYSCALL0 => try w.writeAll(
+                \\    pop rax
+                \\    syscall
+                \\
+            ),
             .SYSCALL1 => try w.writeAll(
                 \\    pop rax
                 \\    pop rdi
+                \\    syscall
+                \\
+            ),
+            .SYSCALL2 => try w.writeAll(
+                \\    pop rax
+                \\    pop rdi
+                \\    pop rsi
                 \\    syscall
                 \\
             ),
@@ -322,6 +354,36 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rdi
                 \\    pop rsi
                 \\    pop rdx
+                \\    syscall
+                \\
+            ),
+            .SYSCALL4 => try w.writeAll(
+                \\    pop rax
+                \\    pop rdi
+                \\    pop rsi
+                \\    pop rdx
+                \\    pop r10
+                \\    syscall
+                \\
+            ),
+            .SYSCALL5 => try w.writeAll(
+                \\    pop rax
+                \\    pop rdi
+                \\    pop rsi
+                \\    pop rdx
+                \\    pop r10
+                \\    pop r8
+                \\    syscall
+                \\
+            ),
+            .SYSCALL6 => try w.writeAll(
+                \\    pop rax
+                \\    pop rdi
+                \\    pop rsi
+                \\    pop rdx
+                \\    pop r10
+                \\    pop r8
+                \\    pop r9
                 \\    syscall
                 \\
             ),
