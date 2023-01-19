@@ -22,7 +22,9 @@ const Op = struct {
         ELSE: usize,
         END: usize,
         DUP,
+        DUP2,
         GT,
+        LT,
         WHILE,
         DO: usize,
         MEM,
@@ -132,10 +134,25 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                 try stack.appendNTimes(x, 2);
                 ip += 1;
             },
+            .DUP2 => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(x);
+                try stack.append(y);
+                try stack.append(x);
+                try stack.append(y);
+                ip += 1;
+            },
             .GT => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(@boolToInt(x > y));
+                ip += 1;
+            },
+            .LT => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@boolToInt(x < y));
                 ip += 1;
             },
             .WHILE => {
@@ -292,6 +309,15 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rax
                 \\
             ),
+            .DUP2 => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    push rax
+                \\    push rbx
+                \\    push rax
+                \\    push rbx
+                \\
+            ),
             .GT => try w.writeAll(
                 \\    mov rcx, 0
                 \\    mov rdx, 1
@@ -299,6 +325,16 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rax
                 \\    cmp rax, rbx
                 \\    cmovg rcx, rdx
+                \\    push rcx
+                \\
+            ),
+            .LT => try w.writeAll(
+                \\    mov rcx, 0
+                \\    mov rdx, 1
+                \\    pop rbx
+                \\    pop rax
+                \\    cmp rax, rbx
+                \\    cmovl rcx, rdx
                 \\    push rcx
                 \\
             ),
@@ -445,10 +481,24 @@ fn parseTokenAsOp(token: Token) !Op {
         return Op.init(.STORE, token);
     } else if (streq(token.word, ",")) {
         return Op.init(.LOAD, token);
+    } else if (streq(token.word, "syscall0")) {
+        return Op.init(.SYSCALL0, token);
     } else if (streq(token.word, "syscall1")) {
         return Op.init(.SYSCALL1, token);
+    } else if (streq(token.word, "syscall2")) {
+        return Op.init(.SYSCALL2, token);
     } else if (streq(token.word, "syscall3")) {
         return Op.init(.SYSCALL3, token);
+    } else if (streq(token.word, "syscall4")) {
+        return Op.init(.SYSCALL4, token);
+    } else if (streq(token.word, "syscall5")) {
+        return Op.init(.SYSCALL5, token);
+    } else if (streq(token.word, "syscall6")) {
+        return Op.init(.SYSCALL6, token);
+    } else if (streq(token.word, "2dup")) {
+        return Op.init(.DUP2, token);
+    } else if (streq(token.word, "<")) {
+        return Op.init(.LT, token);
     } else {
         return Op.init(.{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) }, token);
     }
