@@ -689,12 +689,6 @@ fn streq(x: []const u8, y: []const u8) bool {
     return std.mem.eql(u8, x, y);
 }
 
-fn uncons(argv: []const []const u8, i: *usize) []const u8 {
-    const first = argv[i.*];
-    i.* += 1;
-    return first;
-}
-
 pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, stderr: anytype) !u8 {
     g_a = a;
     var i: usize = 0;
@@ -704,21 +698,21 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
     temp_dir = try std.fs.cwd().makeOpenPath(temp_path, .{});
     defer temp_dir.close();
 
-    const program_name = uncons(args, &i);
+    const program_name = common.uncons(args, &i);
     if (args.len < 1) {
         try usage(stderr, program_name);
         std.log.err("no subcommand provided", .{});
         return error.Usage;
     }
 
-    const subcommand = uncons(args, &i);
+    const subcommand = common.uncons(args, &i);
     if (streq(subcommand, "sim")) {
-        if (args.len < 1) {
+        if (args.len - i < 1) {
             try usage(stderr, program_name);
             std.log.err("no input file provided for simulation", .{});
             return error.Usage;
         }
-        const program_path = uncons(args, &i);
+        const program_path = common.uncons(args, &i);
         const program = try loadProgramFromFile(program_path);
         defer a.free(program);
         try simulateProgram(program, stdout);
@@ -726,17 +720,17 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         var do_run = false;
         var maybe_program_path: ?[]const u8 = null;
         var maybe_output_path: ?[]const u8 = null;
-        while (args.len > 0) {
-            const arg = uncons(args, &i);
+        while (args.len - i > 0) {
+            const arg = common.uncons(args, &i);
             if (streq(arg, "-r")) {
                 do_run = true;
             } else if (streq(arg, "-o")) {
-                if (args.len == 0) {
+                if (args.len - i == 0) {
                     try usage(stderr, program_name);
                     std.log.err("argument for `-o` not provided", .{});
                     return error.Usage;
                 }
-                maybe_output_path = uncons(args, &i);
+                maybe_output_path = common.uncons(args, &i);
             } else {
                 maybe_program_path = arg;
                 break;

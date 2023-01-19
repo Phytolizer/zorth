@@ -36,3 +36,9 @@ pub fn runCmd(a: std.mem.Allocator, argv: []const []const u8, options: anytype) 
     }
     return 0;
 }
+
+pub fn uncons(argv: []const []const u8, i: *usize) []const u8 {
+    const first = argv[i.*];
+    i.* += 1;
+    return first;
+}
