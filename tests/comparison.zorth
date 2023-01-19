@@ -9,33 +9,33 @@ mem + 10 .
 69 420 = dump
 69 69  = dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // greater
 420 69 > dump
 69 420 > dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // less
 420 69 < dump
 69 420 < dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // greater or equal
 420 69 >= dump
 69 420 >= dump
 69 69 >= dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // less or equal
 420 69 <= dump
 69 420 <= dump
 69 69 <= dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // not equal
 69 69 != dump

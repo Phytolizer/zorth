@@ -8,12 +8,12 @@ mem + 10 .
 // add
 34 35 + dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // subtract
 500 80 - dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // modulo
 5 100 mod dump

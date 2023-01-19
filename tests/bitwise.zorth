@@ -8,17 +8,17 @@ mem + 10 .
 // shift left
 1 3 shl dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // shift right
 32 3 shr dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // bit or
 1 2 bor dump
 
-31 mem 1 1 syscall3
+31 mem 1 1 syscall3 drop
 
 // bit and
 1 2 band dump

@@ -295,6 +295,7 @@ fn simulateProgram(program: []const Op, stdout: anytype) !void {
                             2 => std.debug.print("{s}", .{s}),
                             else => return error.UnknownFileDesc,
                         }
+                        try stack.append(@intCast(i64, count));
                     },
                     else => return error.UnimplementedSyscall,
                 }
@@ -540,12 +541,14 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
             .SYSCALL0 => try w.writeAll(
                 \\    pop rax
                 \\    syscall
+                \\    push rax
                 \\
             ),
             .SYSCALL1 => try w.writeAll(
                 \\    pop rax
                 \\    pop rdi
                 \\    syscall
+                \\    push rax
                 \\
             ),
             .SYSCALL2 => try w.writeAll(
@@ -553,6 +556,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rdi
                 \\    pop rsi
                 \\    syscall
+                \\    push rax
                 \\
             ),
             .SYSCALL3 => try w.writeAll(
@@ -561,6 +565,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rsi
                 \\    pop rdx
                 \\    syscall
+                \\    push rax
                 \\
             ),
             .SYSCALL4 => try w.writeAll(
@@ -570,6 +575,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rdx
                 \\    pop r10
                 \\    syscall
+                \\    push rax
                 \\
             ),
             .SYSCALL5 => try w.writeAll(
@@ -580,6 +586,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop r10
                 \\    pop r8
                 \\    syscall
+                \\    push rax
                 \\
             ),
             .SYSCALL6 => try w.writeAll(
@@ -591,6 +598,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop r8
                 \\    pop r9
                 \\    syscall
+                \\    push rax
                 \\
             ),
         }

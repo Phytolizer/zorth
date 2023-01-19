@@ -10,7 +10,7 @@ mem 98 + 1 .
       1 +
    end
    mem + 100 + 10 .
-   101 mem 100 + 1 1 syscall3
+   101 mem 100 + 1 1 syscall3 drop
 
    // pattern
    mem     , 1 shl
