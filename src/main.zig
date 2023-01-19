@@ -6,6 +6,8 @@ const Op = union(enum) {
     PLUS,
     MINUS,
     EQUAL,
+    IF: usize,
+    END,
     DUMP,
 
     const TAG_NAMES = init: {
@@ -54,29 +56,46 @@ fn pop(stack: anytype) !@typeInfo(@TypeOf(stack.items)).Pointer.child {
 fn simulateProgram(program: []const Op) !void {
     var stack = std.ArrayList(i64).init(a);
     defer stack.deinit();
-    for (program) |op| {
+    var ip: usize = 0;
+    while (ip < program.len) {
+        const op = program[ip];
         switch (op) {
             .PUSH => |x| {
                 try stack.append(x);
+                ip += 1;
             },
             .PLUS => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(x + y);
+                ip += 1;
             },
             .MINUS => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(x - y);
+                ip += 1;
             },
             .EQUAL => {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(@boolToInt(x == y));
+                ip += 1;
+            },
+            .IF => |dest| {
+                const x = try pop(&stack);
+                ip = if (x == 0)
+                    dest
+                else
+                    ip + 1;
+            },
+            .END => {
+                ip += 1;
             },
             .DUMP => {
                 const x = try pop(&stack);
                 std.debug.print("{d}\n", .{x});
+                ip += 1;
             },
         }
     }
@@ -123,8 +142,12 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         \\_start:
         \\
     );
-    for (program) |op| {
-        try w.print("    ;; -- {} --\n", .{op});
+    for (program) |op, ip| {
+        try w.print(
+            \\    ;; -- {} --
+            \\.zorth_addr_{d}:
+            \\
+        , .{ op, ip });
         switch (op) {
             .PUSH => |x| try w.print(
                 \\    push {d}
@@ -154,6 +177,13 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rcx
                 \\
             ),
+            .IF => |dest| try w.print(
+                \\    pop rax
+                \\    test rax, rax
+                \\    jz .zorth_addr_{d}
+                \\
+            , .{dest}),
+            .END => {},
             .DUMP => try w.writeAll(
                 \\    pop rdi
                 \\    call dump
@@ -185,15 +215,41 @@ fn parseTokenAsOp(token: Token) !Op {
             @errorName(e),
         });
     }
-    return if (streq(token.word, "+"))
-        .PLUS
-    else if (streq(token.word, "-"))
-        .MINUS
-    else if (streq(token.word, "="))
-        .EQUAL
-    else if (streq(token.word, "."))
-        .DUMP
-    else .{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) };
+    if (streq(token.word, "+")) {
+        return .PLUS;
+    } else if (streq(token.word, "-")) {
+        return .MINUS;
+    } else if (streq(token.word, "=")) {
+        return .EQUAL;
+    } else if (streq(token.word, "if")) {
+        return .{ .IF = undefined };
+    } else if (streq(token.word, "end")) {
+        return .END;
+    } else if (streq(token.word, ".")) {
+        return .DUMP;
+    } else {
+        return .{ .PUSH = try std.fmt.parseInt(i64, token.word, 10) };
+    }
+}
+
+fn resolveJumps(program: []Op) !void {
+    var stack = std.ArrayList(usize).init(a);
+    defer stack.deinit();
+    for (program) |op, ip| {
+        switch (op) {
+            .IF => try stack.append(ip),
+            .END => {
+                const block_ip = try pop(&stack);
+                switch (program[block_ip]) {
+                    .IF => |*dest| dest.* = ip,
+                    else => {
+                        std.process.abort();
+                    },
+                }
+            },
+            else => {},
+        }
+    }
 }
 
 fn indexOfNonePos(comptime T: type, slice: []const T, start_index: usize, values: []const T) ?usize {
@@ -253,12 +309,14 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     const contents = try std.fs.cwd().readFileAlloc(a, path, std.math.maxInt(usize));
     defer a.free(contents);
     var lexer = Lexer.init(path, contents);
-    var result = std.ArrayList(Op).init(a);
-    errdefer result.deinit();
+    var ops = std.ArrayList(Op).init(a);
+    errdefer ops.deinit();
     while (lexer.next()) |token| {
-        try result.append(try parseTokenAsOp(token));
+        try ops.append(try parseTokenAsOp(token));
     }
-    return try result.toOwnedSlice();
+    var result = try ops.toOwnedSlice();
+    try resolveJumps(result);
+    return result;
 }
 
 fn usage(writer: anytype, program_name: []const u8) !void {
