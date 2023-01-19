@@ -252,12 +252,13 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
             ),
         }
     }
-    try w.writeAll(
+    try w.print(
+        \\.zorth_addr_{d}:
         \\    mov rdi, 0
         \\    mov rax, 60
         \\    syscall
         \\
-    );
+    , .{program.len});
 }
 
 const Token = struct {
