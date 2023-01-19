@@ -5,6 +5,8 @@ const common = @import("common.zig");
 var a: std.mem.Allocator = undefined;
 
 fn doTest() !void {
+    var sim_failed: usize = 0;
+    var com_failed: usize = 0;
     var iter_dir = try std.fs.cwd().openIterableDir("tests", .{});
     var w = try iter_dir.walk(a);
     defer w.deinit();
@@ -21,25 +23,45 @@ fn doTest() !void {
             var sim_output_arr = std.ArrayList(u8).init(a);
             defer sim_output_arr.deinit();
             var sim_output = sim_output_arr.writer();
-            _ = try zorth.driver(a, &.{ "zorth", "sim", real_path }, sim_output, std.io.null_writer);
+            _ = try zorth.driver(
+                a,
+                &.{ "zorth", "sim", real_path },
+                sim_output,
+                std.io.null_writer,
+            );
             var com_output_arr = std.ArrayList(u8).init(a);
             defer com_output_arr.deinit();
             var com_output = com_output_arr.writer();
-            _ = try zorth.driver(a, &.{ "zorth", "com", "-r", real_path }, com_output, std.io.null_writer);
+            _ = try zorth.driver(
+                a,
+                &.{ "zorth", "com", "-r", real_path },
+                com_output,
+                std.io.null_writer,
+            );
             if (!std.mem.eql(u8, sim_output_arr.items, expected_output)) {
                 std.log.err("Unexpected simulation output", .{});
                 std.debug.print("Expected:\n{s}\n", .{expected_output});
-                std.debug.print("Simulation output:\n{s}\n", .{sim_output_arr.items});
-                return error.TestFailed;
+                std.debug.print("Actual:\n{s}\n", .{sim_output_arr.items});
+                sim_failed += 1;
             }
             if (!std.mem.eql(u8, com_output_arr.items, expected_output)) {
                 std.log.err("Unexpected compilation output", .{});
                 std.debug.print("Expected:\n{s}\n", .{expected_output});
-                std.debug.print("Compilation output:\n{s}\n", .{com_output_arr.items});
-                return error.TestFailed;
+                std.debug.print("Actual:\n{s}\n", .{com_output_arr.items});
+                com_failed += 1;
             }
             std.log.info("OK {s}", .{real_path});
         }
+    }
+
+    std.debug.print(
+        "\nfailures: {d} simulation, {d} compilation\n",
+        .{ sim_failed, com_failed },
+    );
+    if (sim_failed + com_failed > 0) {
+        return error.TestFailed;
+    } else {
+        std.debug.print("All OK\n", .{});
     }
 }
 
@@ -105,7 +127,7 @@ fn run() !void {
 
 pub fn main() !void {
     run() catch |e| switch (e) {
-        error.Usage => std.process.exit(1),
+        error.Usage, error.TestFailed => std.process.exit(1),
         else => return e,
     };
 }
