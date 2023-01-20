@@ -1,6 +1,6 @@
 # Zorth
 
-A compatible Porth implementation, but in <sup>$300</sup> Zig.
+A compatible Porth implementation, but in ~~$300~~ Zig.
 
 My goal for this is to have feature parity with the self-hosted Porth
 implementation, but without the required bootstrapping. You could of course
