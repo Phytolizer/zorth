@@ -1184,7 +1184,6 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
             else if (macros.get(value)) |macro| {
                 if (DEBUGGING.load_program_from_file)
                     std.debug.print("... is a macro of length {d}\n", .{macro.tokens.items.len});
-                std.mem.reverse(Token, macro.tokens.items);
                 try tokens.appendSlice(macro.tokens.items);
                 // do not process any further
                 continue;
@@ -1369,6 +1368,7 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
                     );
                     return error.Parse;
                 }
+                std.mem.reverse(Token, macro.tokens.items);
                 try macros.put(value, macro);
             },
             else => {

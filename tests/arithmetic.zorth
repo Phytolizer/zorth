@@ -1,18 +1,20 @@
+include "io.zorth"
+
 // add
 34 35 + print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // subtract
 500 80 - print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // modulo
 5 100 mod print
 104 100 mod print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // multiply
 42 10 * print

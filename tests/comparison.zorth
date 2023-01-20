@@ -1,34 +1,36 @@
+include "io.zorth"
+
 // equals
 69 420 = print
 69 69  = print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // greater
 420 69 > print
 69 420 > print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // less
 420 69 < print
 69 420 < print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // greater or equal
 420 69 >= print
 69 420 >= print
 69 69 >= print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // less or equal
 420 69 <= print
 69 420 <= print
 69 69 <= print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // not equal
 69 69 != print

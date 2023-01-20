@@ -1,41 +1,43 @@
+include "io.zorth"
+
 // push int
 10 20 30 print print print
 10 print 20 print 30 print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // push str
-"Hello, World\n" 1 1 syscall3 drop // ASCII
-"你好世界！\n" 1 1 syscall3 drop // UTF-8
-"\u4f60\u597d\u4e16\u754c\uff01\n" 1 1 syscall3 drop // same as above with escapes instead
+"Hello, World\n" write // ASCII
+"你好世界！\n" write // UTF-8
+"\u4f60\u597d\u4e16\u754c\uff01\n" write // same as above with escapes instead
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // dup
 420 dup dup print print print
 69 dup print dup print print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // 2dup
 69 420 2dup print print print print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // swap
 69 420 swap print print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // drop
 69 420 drop print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // over
 69 420 over print print print
 
-"------------------------------\n" 1 1 syscall3 drop
+"------------------------------\n" write
 
 // large number
 1234567890987654321 print
