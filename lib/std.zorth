@@ -7,3 +7,7 @@ end
 macro 2dup
   over over
 end
+
+macro 2drop
+  drop drop
+end

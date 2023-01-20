@@ -30,7 +30,7 @@ mem N 2 - + 1 .
 
     1 +
   end
-  drop drop
+  2drop
 
   1 +
 end
