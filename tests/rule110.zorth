@@ -1,4 +1,4 @@
-include "lib/io.zorth"
+include "io.zorth"
 
 macro N 100 end
 

@@ -1133,7 +1133,7 @@ const Lexer = struct {
     }
 };
 
-fn loadProgramFromFile(path: []const u8) ![]Op {
+fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]Op {
     const contents = try std.fs.cwd().readFileAlloc(g_a, path, std.math.maxInt(usize));
     var extra_contents = std.ArrayList([]const u8).init(g_a);
     defer {
@@ -1274,15 +1274,25 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                         return error.Parse;
                     },
                 };
-                const included_contents = std.fs.cwd().readFileAlloc(g_a, include_path, std.math.maxInt(usize)) catch |e| switch (e) {
-                    error.FileNotFound => {
-                        std.debug.print(
-                            "{}: error: file `{s}` not found\n",
-                            .{ token.loc, include_path },
-                        );
-                        return error.Parse;
-                    },
-                    else => return e,
+                const included_contents = findInclude: {
+                    for (include_paths) |incdir| {
+                        const tryReadRelative = struct {
+                            fn f(relative: []const u8, incpath: []const u8) ![]u8 {
+                                const dir = try std.fs.cwd().openDir(relative, .{});
+                                return try dir.readFileAlloc(g_a, incpath, std.math.maxInt(usize));
+                            }
+                        }.f;
+                        const included_contents = tryReadRelative(incdir, include_path) catch |e| switch (e) {
+                            error.FileNotFound => continue,
+                            else => return e,
+                        };
+                        break :findInclude included_contents;
+                    }
+                    std.debug.print(
+                        "{}: error: file `{s}` not found\n",
+                        .{ token.loc, include_path },
+                    );
+                    return error.Parse;
                 };
                 try extra_contents.append(included_contents);
                 var include_lexer = Lexer.init(include_path, included_contents);
@@ -1389,14 +1399,16 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
 
 fn usage(writer: anytype, program_name: []const u8) !void {
     try writer.print(
-        \\Usage: {s} <SUBCOMMAND> [ARGS]
-        \\SUBCOMMANDS:
-        \\  sim <file>                 Simulate the program
-        \\  com [OPTIONS] <file>       Compile the program
-        \\    OPTIONS:
-        \\      -r                       Run the program after compilation
-        \\      -o <file|dir>            Set the output path
-        \\  help                       Print this help to stdout
+        \\Usage: {s} [OPTIONS] <SUBCOMMAND> [ARGS]
+        \\  OPTIONS:
+        \\    -I <path>                  Add a folder to the include path
+        \\  SUBCOMMANDS:
+        \\    sim <file>                 Simulate the program
+        \\    com [OPTIONS] <file>       Compile the program
+        \\      OPTIONS:
+        \\        -r                       Run the program after compilation
+        \\        -o <file|dir>            Set the output path
+        \\    help                       Print this help to stdout
         \\
     , .{program_name});
 }
@@ -1421,6 +1433,22 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         return error.Usage;
     }
 
+    var include_paths = std.ArrayList([]const u8).init(a);
+    defer include_paths.deinit();
+    try include_paths.appendSlice(&.{ ".", "./lib" });
+    while (args.len - i > 0) {
+        if (streq(args[i], "-I")) {
+            if (args.len - i == 0) {
+                try usage(stderr, program_name);
+                std.log.err("argument for `-I` not provided", .{});
+                return error.Usage;
+            }
+            try include_paths.append(common.uncons(args, &i));
+        } else {
+            break;
+        }
+    }
+
     const subcommand = common.uncons(args, &i);
     if (streq(subcommand, "sim")) {
         if (args.len - i < 1) {
@@ -1429,7 +1457,7 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
             return error.Usage;
         }
         const program_path = common.uncons(args, &i);
-        const program = try loadProgramFromFile(program_path);
+        const program = try loadProgramFromFile(program_path, include_paths.items);
         defer {
             for (program) |op| {
                 op.deinit();
@@ -1462,7 +1490,7 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
             std.log.err("no input file provided for compilation", .{});
             return error.Usage;
         };
-        const program = try loadProgramFromFile(program_path);
+        const program = try loadProgramFromFile(program_path, include_paths.items);
         defer {
             for (program) |op| {
                 op.deinit();
