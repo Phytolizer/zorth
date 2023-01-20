@@ -5,7 +5,9 @@
 "------------------------------\n" 1 1 syscall3 drop
 
 // push str
-"Hello, World\n" 1 1 syscall3 drop
+"Hello, World\n" 1 1 syscall3 drop // ASCII
+"你好世界！\n" 1 1 syscall3 drop // UTF-8
+"\u4f60\u597d\u4e16\u754c\uff01\n" 1 1 syscall3 drop // same as above with escapes instead
 
 "------------------------------\n" 1 1 syscall3 drop
 

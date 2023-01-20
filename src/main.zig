@@ -2,7 +2,10 @@ const std = @import("std");
 const known_folders = @import("known-folders");
 const common = @import("common.zig");
 
-const DEBUGGING = false;
+const DEBUGGING = .{
+    .simulate_program = false,
+    .unesc = true,
+};
 
 const Op = struct {
     code: Code,
@@ -160,7 +163,7 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
     defer g_a.free(mem);
     while (ip < program.len) {
         const op = &program[ip];
-        if (DEBUGGING) {
+        if (DEBUGGING.simulate_program) {
             std.debug.print("stack: {any}\n", .{stack.items});
             std.debug.print("op: {}\n", .{op});
         }
@@ -795,10 +798,12 @@ fn unesc(s: []const u8) ![]u8 {
                     'U' => 8,
                     else => unreachable,
                 };
-                i += 1;
+                if (DEBUGGING.unesc)
+                    std.debug.print("Decoding escape sequence '{c}'\n", .{first});
                 var char_val: usize = 0;
                 var j: usize = 0;
                 while (j < count) : (j += 1) {
+                    i += 1;
                     // HACK: this struct panics with a particular message
                     const panicker = struct {
                         count: usize,
@@ -816,14 +821,19 @@ fn unesc(s: []const u8) ![]u8 {
                     if (i == s.len) {
                         panicker.panic();
                     }
-                    switch (s[i]) {
-                        '0'...'9' => char_val += s[i] - '0',
-                        'a'...'f' => char_val += s[i] - 'a' + 10,
-                        'A'...'F' => char_val += s[i] - 'A' + 10,
+                    const increment = switch (s[i]) {
+                        '0'...'9' => s[i] - '0',
+                        'a'...'f' => s[i] - 'a' + 10,
+                        'A'...'F' => s[i] - 'A' + 10,
                         else => panicker.panic(),
-                    }
-                    i += 1;
+                    };
+                    char_val <<= 4;
+                    char_val += increment;
+                    if (DEBUGGING.unesc)
+                        std.debug.print("'{c}' -> {d}\n", .{ s[i], increment });
                 }
+                if (DEBUGGING.unesc)
+                    std.debug.print("result: {d} ({x})\n", .{ char_val, char_val });
                 if (char_val > std.math.maxInt(u21)) {
                     std.debug.panic(
                         "escape '\\{c}{x}' is too big for Unicode",
@@ -833,6 +843,8 @@ fn unesc(s: []const u8) ![]u8 {
                 // codepoint goes back to utf8
                 var encoded_val: [4]u8 = undefined;
                 const num_bytes = try std.unicode.utf8Encode(@intCast(u21, char_val), &encoded_val);
+                if (DEBUGGING.unesc)
+                    std.debug.print("as unicode: '{s}'\n", .{encoded_val[0..num_bytes]});
                 try result.appendSlice(encoded_val[0..num_bytes]);
             },
             else => std.debug.panic("unsupported escape '\\{c}'", .{s[i]}),
