@@ -8,6 +8,49 @@ const DEBUGGING = .{
     .load_program_from_file = false,
 };
 
+const Keyword = union(enum) {
+    IF: usize,
+    ELSE: usize,
+    END: usize,
+    WHILE,
+    DO: usize,
+    MACRO,
+    INCLUDE,
+
+    const TAG_NAMES = tagNames(@This());
+
+    fn tagName(self: @This()) []const u8 {
+        return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
+    }
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{s}", .{self.tagName()});
+        switch (self) {
+            .IF,
+            .ELSE,
+            .END,
+            .DO,
+            => |x| try writer.print(" {d}", .{x}),
+            else => {},
+        }
+    }
+};
+
+fn tagNames(comptime T: type) []const []const u8 {
+    var result: []const []const u8 = &[_][]const u8{};
+    inline for (std.meta.fieldNames(T)) |fld| {
+        var lower_field: [fld.len]u8 = undefined;
+        for (fld) |c, i| {
+            lower_field[i] = std.ascii.toLower(c);
+            if (lower_field[i] == '_') {
+                lower_field[i] = ' ';
+            }
+        }
+        result = result ++ [_][]const u8{&lower_field};
+    }
+    return result;
+}
+
 const Op = struct {
     code: Code,
     token: Token,
@@ -35,8 +78,6 @@ const Op = struct {
         END: usize,
         WHILE,
         DO: usize,
-        MACRO,
-        INCLUDE,
         DUP,
         SWAP,
         DROP,
@@ -59,20 +100,7 @@ const Op = struct {
         SYSCALL5,
         SYSCALL6,
 
-        const TAG_NAMES = init: {
-            var result: []const []const u8 = &[_][]const u8{};
-            inline for (std.meta.fieldNames(@This())) |fld| {
-                var lower_field: [fld.len]u8 = undefined;
-                for (fld) |c, i| {
-                    lower_field[i] = std.ascii.toLower(c);
-                    if (lower_field[i] == '_') {
-                        lower_field[i] = ' ';
-                    }
-                }
-                result = result ++ [_][]const u8{&lower_field};
-            }
-            break :init result;
-        };
+        const TAG_NAMES = tagNames(@This());
 
         fn tagName(self: @This()) []const u8 {
             return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
@@ -80,19 +108,19 @@ const Op = struct {
     };
 
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.writeAll(Code.tagName(self.code));
         switch (self.code) {
-            .PUSH_INT => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
-
+            .PUSH_INT => |x| try writer.print(" {d}", .{x}),
+            .PUSH_STR => |x| {
+                const formatter = std.fmt.fmtSliceEscapeUpper(x);
+                try writer.print(" \"{}\"", .{formatter});
+            },
             .IF,
             .ELSE,
             .END,
             .DO,
-            => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
-            .PUSH_STR => |x| {
-                const formatter = std.fmt.fmtSliceEscapeUpper(x);
-                try writer.print("{s} \"{}\"", .{ Code.tagName(self.code), formatter });
-            },
-            else => try writer.writeAll(Code.tagName(self.code)),
+            => |x| try writer.print(" {d}", .{x}),
+            else => {},
         }
     }
     const COUNT_OPS = @typeInfo(Op).Union.fields.len;
@@ -126,13 +154,6 @@ const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "shl", .SHL },
     .{ "bor", .BOR },
     .{ "band", .BAND },
-    .{ "if", .{ .IF = undefined } },
-    .{ "end", .{ .END = undefined } },
-    .{ "else", .{ .ELSE = undefined } },
-    .{ "while", .WHILE },
-    .{ "do", .{ .DO = undefined } },
-    .{ "macro", .MACRO },
-    .{ "include", .INCLUDE },
     .{ "dup", .DUP },
     .{ "swap", .SWAP },
     .{ "drop", .DROP },
@@ -147,6 +168,16 @@ const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "syscall4", .SYSCALL4 },
     .{ "syscall5", .SYSCALL5 },
     .{ "syscall6", .SYSCALL6 },
+});
+
+const KEYWORD_NAMES = std.ComptimeStringMap(Keyword, .{
+    .{ "if", .{ .IF = undefined } },
+    .{ "end", .{ .END = undefined } },
+    .{ "else", .{ .ELSE = undefined } },
+    .{ "while", .WHILE },
+    .{ "do", .{ .DO = undefined } },
+    .{ "macro", .MACRO },
+    .{ "include", .INCLUDE },
 });
 
 var g_a: std.mem.Allocator = undefined;
@@ -294,8 +325,6 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 else
                     ip + 1;
             },
-            // compile-time words
-            .MACRO, .INCLUDE => unreachable,
             .DUP => {
                 const x = try pop(&stack);
                 try stack.appendNTimes(x, 2);
@@ -545,8 +574,6 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    jz .zorth_addr_{d}
                 \\
             , .{dest}),
-            // compile-time words
-            .MACRO, .INCLUDE => unreachable,
             .DUP => try w.writeAll(
                 \\    pop rax
                 \\    push rax
@@ -767,6 +794,7 @@ const Token = struct {
         int,
         str,
         char,
+        keyword,
 
         pub fn readableName(self: @This()) []const u8 {
             return switch (self) {
@@ -774,6 +802,7 @@ const Token = struct {
                 .int => "an integer",
                 .str => "a string",
                 .char => "a character",
+                .keyword => "a keyword",
             };
         }
     };
@@ -783,6 +812,7 @@ const Token = struct {
         int: i64,
         str: []const u8,
         char: u21,
+        keyword: Keyword,
     };
 
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -795,6 +825,7 @@ const Token = struct {
                 const len = std.unicode.utf8Encode(value, &utf8buf) catch unreachable;
                 try writer.print("char {s}", .{utf8buf[0..len]});
             },
+            .keyword => |value| try writer.print("{}", .{value}),
         }
     }
 };
@@ -1021,7 +1052,9 @@ const Lexer = struct {
     fn lexWord(text: []const u8) Token.Type {
         if (std.fmt.parseInt(i64, text, 10)) |i| {
             return .{ .int = i };
-        } else |_| {
+        } else |_| if (KEYWORD_NAMES.get(text)) |kw| {
+            return .{ .keyword = kw };
+        } else {
             return .{ .word = text };
         }
     }
@@ -1163,10 +1196,11 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
         if (DEBUGGING.load_program_from_file)
             std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
 
-        var op = switch (token.type) {
-            .word => |value| if (BUILTIN_WORDS.get(value)) |code|
-                Op.init(code, token)
-            else if (macros.get(value)) |macro| {
+        switch (token.type) {
+            .word => |value| if (BUILTIN_WORDS.get(value)) |code| {
+                try program.append(Op.init(code, token));
+                ip += 1;
+            } else if (macros.get(value)) |macro| {
                 if (DEBUGGING.load_program_from_file)
                     std.debug.print("... is a macro of length {d}\n", .{macro.tokens.items.len});
                 try tokens.appendSlice(macro.tokens.items);
@@ -1176,189 +1210,219 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
                 std.debug.print("{}: unknown word `{s}`\n", .{ token.loc, value });
                 return error.Parse;
             },
-            .int => |value| Op.init(.{ .PUSH_INT = value }, token),
-            .str => |value| Op.init(.{ .PUSH_STR = try unesc(token.loc, value, .{}) }, token),
-            .char => |value| Op.init(.{ .PUSH_INT = value }, token),
-        };
-        switch (op.code) {
-            .IF, .WHILE => {
-                try stack.append(ip);
-                try program.append(op);
+            .int => |value| {
+                try program.append(Op.init(.{ .PUSH_INT = value }, token));
                 ip += 1;
             },
-            .ELSE => {
-                const if_ip = try pop(&stack);
-                switch (program.items[if_ip].code) {
-                    .IF => |*dest| {
-                        dest.* = ip + 1;
-                        try stack.append(ip);
-                    },
-                    else => {
-                        std.debug.print(
-                            "{}: error: `else` without `if`\n",
-                            .{program.items[if_ip].token.loc},
-                        );
-                        return error.Parse;
-                    },
-                }
-                try program.append(op);
+            .str => |value| {
+                try program.append(
+                    Op.init(.{ .PUSH_STR = try unesc(token.loc, value, .{}) }, token),
+                );
                 ip += 1;
             },
-            .DO => |*dest| {
-                const while_ip = try pop(&stack);
-                dest.* = while_ip;
-                try stack.append(ip);
-                try program.append(op);
+            .char => |value| {
+                try program.append(Op.init(.{ .PUSH_INT = value }, token));
                 ip += 1;
             },
-            .END => |*end_dest| {
-                const block_ip = try pop(&stack);
-                switch (program.items[block_ip].code) {
-                    .IF, .ELSE => |*dest| {
-                        dest.* = ip;
-                        end_dest.* = ip + 1;
-                    },
-                    .DO => |*dest| {
-                        end_dest.* = dest.*;
-                        dest.* = ip + 1;
-                    },
-                    else => {
-                        std.debug.print(
-                            "{}: error: `end` without `if`/`do`\n",
-                            .{program.items[block_ip].token.loc},
-                        );
-                        return error.Parse;
-                    },
-                }
-                try program.append(op);
-                ip += 1;
-            },
-            .INCLUDE => {
-                if (tokens.items.len == 0) {
-                    std.debug.print(
-                        "{}: error: expected include file path, got EOF\n",
-                        .{op.token.loc},
-                    );
-                    return error.Parse;
-                }
-                token = tokens.pop();
-                if (DEBUGGING.load_program_from_file)
-                    std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
-                const include_path = switch (token.type) {
-                    .str => |value| value,
-                    else => {
-                        std.debug.print(
-                            "{}: error: expected include path to be {s}, got {s}\n",
-                            .{
-                                token.loc,
-                                Token.Tag.readableName(.str),
-                                std.meta.activeTag(token.type).readableName(),
-                            },
-                        );
-                        return error.Parse;
-                    },
-                };
-                const included_contents = findInclude: {
-                    for (include_paths) |incdir| {
-                        const tryReadRelative = struct {
-                            fn f(relative: []const u8, incpath: []const u8) ![]u8 {
-                                const dir = try std.fs.cwd().openDir(relative, .{});
-                                return try dir.readFileAlloc(g_a, incpath, std.math.maxInt(usize));
-                            }
-                        }.f;
-                        const included_contents = tryReadRelative(incdir, include_path) catch |e| switch (e) {
-                            error.FileNotFound => continue,
-                            else => return e,
-                        };
-                        break :findInclude included_contents;
-                    }
-                    std.debug.print(
-                        "{}: error: file `{s}` not found\n",
-                        .{ token.loc, include_path },
-                    );
-                    return error.Parse;
-                };
-                try extra_contents.append(included_contents);
-                var include_lexer = Lexer.init(include_path, included_contents);
-                const include_start = tokens.items.len;
-                while (try include_lexer.next()) |include_token| {
-                    try tokens.append(include_token);
-                }
-                std.mem.reverse(Token, tokens.items[include_start..]);
-            },
-            .MACRO => {
-                if (tokens.items.len == 0) {
-                    std.debug.print(
-                        "{}: error: expected macro name, got EOF\n",
-                        .{op.token.loc},
-                    );
-                    return error.Parse;
-                }
-                token = tokens.pop();
-                if (DEBUGGING.load_program_from_file)
-                    std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
-                const value = switch (token.type) {
-                    .word => |value| value,
-                    else => {
-                        std.debug.print(
-                            "{}: error: expected macro name to be {s}, got {s}\n",
-                            .{
-                                token.loc,
-                                Token.Tag.readableName(.word),
-                                std.meta.activeTag(token.type).readableName(),
-                            },
-                        );
-                        return error.Parse;
-                    },
-                };
-                if (macros.get(value)) |existing| {
-                    std.debug.print(
-                        "{}: error: redefinition of existing macro `{s}`\n",
-                        .{ token.loc, value },
-                    );
-                    std.debug.print(
-                        "{}: note: first definition is here\n",
-                        .{existing.loc},
-                    );
-                    return error.Parse;
-                }
-                if (BUILTIN_WORDS.get(value) != null) {
-                    std.debug.print(
-                        "{}: error: redefinition of built-in word `{s}`\n",
-                        .{ token.loc, value },
-                    );
-                    return error.Parse;
-                }
-                var macro = Macro.init(op.token.loc);
-
-                findEnd: {
-                    while (tokens.popOrNull()) |definition_token| {
-                        if (DEBUGGING.load_program_from_file)
+            .keyword => |*kw| switch (kw.*) {
+                .IF => {
+                    try stack.append(ip);
+                    try program.append(Op.init(.{ .IF = undefined }, token));
+                    ip += 1;
+                },
+                .WHILE => {
+                    try stack.append(ip);
+                    try program.append(Op.init(.WHILE, token));
+                    ip += 1;
+                },
+                .ELSE => {
+                    const if_ip = try pop(&stack);
+                    switch (program.items[if_ip].code) {
+                        .IF => |*dest| {
+                            dest.* = ip + 1;
+                            try stack.append(ip);
+                        },
+                        else => {
                             std.debug.print(
-                                "{}: ip {d}, {}\n",
-                                .{ definition_token.loc, ip, definition_token },
+                                "{}: error: `else` without `if`\n",
+                                .{program.items[if_ip].token.loc},
                             );
-                        switch (definition_token.type) {
-                            .word => |tvalue| if (streq(tvalue, "end")) {
-                                break :findEnd;
-                            },
-                            else => {},
-                        }
-                        try macro.tokens.append(definition_token);
+                            if (DEBUGGING.load_program_from_file)
+                                std.debug.print("instead got {any}\n", .{program.items[if_ip].code});
+                            return error.Parse;
+                        },
                     }
+                    try program.append(Op.init(.{ .ELSE = undefined }, token));
+                    ip += 1;
+                },
+                .DO => |*dest| {
+                    const while_ip = try pop(&stack);
+                    dest.* = while_ip;
+                    try stack.append(ip);
+                    try program.append(Op.init(.{ .DO = dest.* }, token));
+                    ip += 1;
+                },
+                .END => |*end_dest| {
+                    const block_ip = try pop(&stack);
+                    switch (program.items[block_ip].code) {
+                        .IF, .ELSE => |*dest| {
+                            dest.* = ip;
+                            end_dest.* = ip + 1;
+                        },
+                        .DO => |*dest| {
+                            end_dest.* = dest.*;
+                            dest.* = ip + 1;
+                        },
+                        else => {
+                            std.debug.print(
+                                "{}: error: `end` without `if`/`do`\n",
+                                .{program.items[block_ip].token.loc},
+                            );
+                            if (DEBUGGING.load_program_from_file)
+                                std.debug.print(
+                                    "instead got {any} @{d}\n",
+                                    .{ program.items[block_ip].code, block_ip },
+                                );
+                            return error.Parse;
+                        },
+                    }
+                    try program.append(Op.init(.{ .END = end_dest.* }, token));
+                    ip += 1;
+                },
+                .INCLUDE => {
+                    if (tokens.items.len == 0) {
+                        std.debug.print(
+                            "{}: error: expected include file path, got EOF\n",
+                            .{token.loc},
+                        );
+                        return error.Parse;
+                    }
+                    token = tokens.pop();
+                    if (DEBUGGING.load_program_from_file)
+                        std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
+                    const include_path = switch (token.type) {
+                        .str => |value| value,
+                        else => {
+                            std.debug.print(
+                                "{}: error: expected include path to be {s}, got {s}\n",
+                                .{
+                                    token.loc,
+                                    Token.Tag.readableName(.str),
+                                    std.meta.activeTag(token.type).readableName(),
+                                },
+                            );
+                            return error.Parse;
+                        },
+                    };
+                    const IncludedFile = struct {
+                        full_path: []const u8,
+                        contents: []const u8,
+                    };
+                    const included_contents = findInclude: {
+                        for (include_paths) |incdir| {
+                            const tryReadRelative = struct {
+                                fn f(relative: []const u8, incpath: []const u8) !struct {
+                                    dir: std.fs.Dir,
+                                    contents: []const u8,
+                                } {
+                                    const dir = try std.fs.cwd().openDir(relative, .{});
+                                    const read_result = try dir.readFileAlloc(g_a, incpath, std.math.maxInt(usize));
+                                    return .{ .dir = dir, .contents = read_result };
+                                }
+                            }.f;
+                            const included_contents = tryReadRelative(incdir, include_path) catch |e| switch (e) {
+                                error.FileNotFound => continue,
+                                else => return e,
+                            };
+                            break :findInclude IncludedFile{
+                                .full_path = try included_contents.dir.realpathAlloc(g_a, include_path),
+                                .contents = included_contents.contents,
+                            };
+                        }
+                        std.debug.print(
+                            "{}: error: file `{s}` not found\n",
+                            .{ token.loc, include_path },
+                        );
+                        return error.Parse;
+                    };
+                    try extra_contents.appendSlice(&.{ included_contents.full_path, included_contents.contents });
+                    var include_lexer = Lexer.init(included_contents.full_path, included_contents.contents);
+                    const include_start = tokens.items.len;
+                    while (try include_lexer.next()) |include_token| {
+                        try tokens.append(include_token);
+                    }
+                    std.mem.reverse(Token, tokens.items[include_start..]);
+                },
+                .MACRO => {
+                    if (tokens.items.len == 0) {
+                        std.debug.print(
+                            "{}: error: expected macro name, got EOF\n",
+                            .{token.loc},
+                        );
+                        return error.Parse;
+                    }
+                    token = tokens.pop();
+                    if (DEBUGGING.load_program_from_file)
+                        std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
+                    const value = switch (token.type) {
+                        .word => |value| value,
+                        else => {
+                            std.debug.print(
+                                "{}: error: expected macro name to be {s}, got {s}\n",
+                                .{
+                                    token.loc,
+                                    Token.Tag.readableName(.word),
+                                    std.meta.activeTag(token.type).readableName(),
+                                },
+                            );
+                            return error.Parse;
+                        },
+                    };
+                    if (macros.get(value)) |existing| {
+                        std.debug.print(
+                            "{}: error: redefinition of existing macro `{s}`\n",
+                            .{ token.loc, value },
+                        );
+                        std.debug.print(
+                            "{}: note: first definition is here\n",
+                            .{existing.loc},
+                        );
+                        return error.Parse;
+                    }
+                    if (BUILTIN_WORDS.get(value) != null) {
+                        std.debug.print(
+                            "{}: error: redefinition of built-in word `{s}`\n",
+                            .{ token.loc, value },
+                        );
+                        return error.Parse;
+                    }
+                    var macro = Macro.init(token.loc);
 
-                    std.debug.print(
-                        "{}: error: expected `end` after macro definition, got EOF\n",
-                        .{op.token.loc},
-                    );
-                    return error.Parse;
-                }
-                std.mem.reverse(Token, macro.tokens.items);
-                try macros.put(value, macro);
-            },
-            else => {
-                try program.append(op);
-                ip += 1;
+                    findEnd: {
+                        while (tokens.popOrNull()) |definition_token| {
+                            if (DEBUGGING.load_program_from_file)
+                                std.debug.print(
+                                    "{}: ip {d}, {}\n",
+                                    .{ definition_token.loc, ip, definition_token },
+                                );
+                            switch (definition_token.type) {
+                                .keyword => |temp_kw| if (temp_kw == .END) {
+                                    break :findEnd;
+                                },
+                                else => {},
+                            }
+                            try macro.tokens.append(definition_token);
+                        }
+
+                        std.debug.print(
+                            "{}: error: expected `end` after macro definition, got EOF\n",
+                            .{token.loc},
+                        );
+                        return error.Parse;
+                    }
+                    std.mem.reverse(Token, macro.tokens.items);
+                    try macros.put(value, macro);
+                },
             },
         }
     }
