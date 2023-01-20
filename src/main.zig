@@ -1038,10 +1038,23 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     }
     var stack = std.ArrayList(usize).init(g_a);
     defer stack.deinit();
+    errdefer |e| if (e == error.Parse and DEBUGGING.load_program_from_file) {
+        std.debug.print("INSTRUCTIONS SO FAR:\n", .{});
+        for (program.items) |op, i| {
+            std.debug.print("{}: @{d}: {any}\n", .{ op.token.loc, i, op.code });
+        }
+        std.debug.print("BLOCK STACK:\n", .{});
+        for (stack.items) |item| {
+            std.debug.print("{any}\n", .{program.items[item].code});
+        }
+    };
     std.mem.reverse(Token, tokens.items);
     var ip: usize = 0;
     while (tokens.items.len > 0) {
         var token = tokens.pop();
+        if (DEBUGGING.load_program_from_file)
+            std.debug.print("{}: ip {d}, token {any}\n", .{ token.loc, ip, token.type });
+
         var op = switch (token.type) {
             .word => |value| if (BUILTIN_WORDS.get(value)) |code|
                 Op.init(code, token)
@@ -1061,6 +1074,7 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
             .IF, .WHILE => {
                 try stack.append(ip);
                 try program.append(op);
+                ip += 1;
             },
             .ELSE => {
                 const if_ip = try pop(&stack);
@@ -1078,12 +1092,14 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                     },
                 }
                 try program.append(op);
+                ip += 1;
             },
             .DO => |*dest| {
                 const while_ip = try pop(&stack);
                 dest.* = while_ip;
                 try stack.append(ip);
                 try program.append(op);
+                ip += 1;
             },
             .END => |*end_dest| {
                 const block_ip = try pop(&stack);
@@ -1105,6 +1121,7 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                     },
                 }
                 try program.append(op);
+                ip += 1;
             },
             .MACRO => {
                 if (tokens.items.len == 0) {
@@ -1168,10 +1185,11 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                 }
                 try macros.put(value, macro);
             },
-            else => try program.append(op),
+            else => {
+                try program.append(op);
+                ip += 1;
+            },
         }
-
-        ip += 1;
     }
 
     if (stack.items.len > 0) {

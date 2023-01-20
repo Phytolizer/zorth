@@ -1,33 +1,36 @@
-mem 98 + 1 .
+macro write 1 1 syscall3 drop end
+macro N 100 end
 
-0 while dup 98 < do
-   0 while dup 100 < do
-      dup mem + , if
-         dup mem + 100 + 42 .
-      else
-         dup mem + 100 + 32 .
-      end
-      1 +
-   end
-   mem + 100 + 10 .
-   101 mem 100 + 1 1 syscall3 drop
+mem N 2 - + 1 .
 
-   // pattern
-   mem     , 1 shl
-   mem 1 + ,
-   bor
+0 while dup N 2 - < do
+  0 while dup N < do
+    dup mem + , if
+      dup mem + N + 42 .
+    else
+      dup mem + N + 32 .
+    end
+    1 +
+  end
+  mem + N + 10 .
+  N 1 + mem N + write
 
-   1 while dup 98 < do
-      swap 1 shl 7 band
-      over mem + 1 + , bor
-      2dup 110 swap shr 1 band
-      swap mem + swap .
-      swap
+  // pattern
+  mem     , 1 shl
+  mem 1 + ,
+  bor
 
-      1 +
-   end
-   drop drop
+  1 while dup N 2 - < do
+    swap 1 shl 7 band
+    over mem + 1 + , bor
+    2dup 110 swap shr 1 band
+    swap mem + swap .
+    swap
 
-   1 +
+    1 +
+  end
+  drop drop
+
+  1 +
 end
 drop
