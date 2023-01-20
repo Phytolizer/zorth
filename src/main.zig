@@ -785,10 +785,10 @@ const Token = struct {
 
         pub fn readableName(self: @This()) []const u8 {
             return switch (self) {
-                .word => "word",
-                .int => "integer",
-                .str => "string",
-                .char => "character",
+                .word => "a word",
+                .int => "an integer",
+                .str => "a string",
+                .char => "a character",
             };
         }
     };
