@@ -5,7 +5,7 @@ const common = @import("common.zig");
 const DEBUGGING = .{
     .simulate_program = false,
     .unesc = false,
-    .load_program_from_file = true,
+    .load_program_from_file = false,
 };
 
 const Op = struct {
@@ -88,7 +88,10 @@ const Op = struct {
             .END,
             .DO,
             => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
-            .PUSH_STR => |x| try writer.print("{s} {s}", .{ Code.tagName(self.code), x }),
+            .PUSH_STR => |x| {
+                const formatter = std.fmt.fmtSliceEscapeUpper(x);
+                try writer.print("{s} \"{}\"", .{ Code.tagName(self.code), formatter });
+            },
             else => try writer.writeAll(Code.tagName(self.code)),
         }
     }
