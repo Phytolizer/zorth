@@ -1,4 +1,4 @@
-include "io.zorth"
+include "std.zorth"
 
 // shift left
 1 3 shl print

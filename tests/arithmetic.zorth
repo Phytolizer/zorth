@@ -1,4 +1,4 @@
-include "io.zorth"
+include "std.zorth"
 
 // add
 34 35 + print

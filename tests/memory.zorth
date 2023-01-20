@@ -1,4 +1,4 @@
-include "io.zorth"
+include "std.zorth"
 
 mem 0 + 97 .
 mem 1 + 98 .

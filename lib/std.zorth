@@ -3,3 +3,7 @@ include "linux.zorth"
 macro write
   STDOUT SYS_write syscall3 drop
 end
+
+macro 2dup
+  over over
+end

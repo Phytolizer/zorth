@@ -38,7 +38,6 @@ const Op = struct {
         MACRO,
         INCLUDE,
         DUP,
-        DUP2,
         SWAP,
         DROP,
         OVER,
@@ -135,7 +134,6 @@ const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "macro", .MACRO },
     .{ "include", .INCLUDE },
     .{ "dup", .DUP },
-    .{ "2dup", .DUP2 },
     .{ "swap", .SWAP },
     .{ "drop", .DROP },
     .{ "over", .OVER },
@@ -300,12 +298,6 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
             .DUP => {
                 const x = try pop(&stack);
                 try stack.appendNTimes(x, 2);
-                ip += 1;
-            },
-            .DUP2 => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.appendSlice(&.{ x, y, x, y });
                 ip += 1;
             },
             .SWAP => {
@@ -557,15 +549,6 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rax
                 \\    push rax
                 \\    push rax
-                \\
-            ),
-            .DUP2 => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    push rax
-                \\    push rbx
-                \\    push rax
-                \\    push rbx
                 \\
             ),
             .SWAP => try w.writeAll(

@@ -1,3 +1,3 @@
-include "io.zorth"
+include "std.zorth"
 
 "Hello, World\n" write

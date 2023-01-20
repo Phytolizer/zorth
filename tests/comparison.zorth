@@ -1,4 +1,4 @@
-include "io.zorth"
+include "std.zorth"
 
 // equals
 69 420 = print
