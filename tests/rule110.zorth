@@ -13,7 +13,7 @@ mem N 2 - + 1 .
     end
     1 +
   end
-  mem + N + 10 .
+  mem + N + '\n' .
   N 1 + mem N + write
 
   // pattern
