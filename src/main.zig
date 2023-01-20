@@ -457,7 +457,7 @@ var temp_dir: std.fs.Dir = undefined;
 var temp_path: []const u8 = undefined;
 
 fn compileProgram(program: []const Op, out_path: []const u8) !void {
-    const print = @embedFile("dump.nasm");
+    const print = @embedFile("dump.asm");
     var temp_nasm = try temp_dir.createFile(out_path, .{});
     defer temp_nasm.close();
     var strs = std.ArrayList([]const u8).init(g_a);
