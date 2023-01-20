@@ -781,12 +781,14 @@ const Token = struct {
         word,
         int,
         str,
+        char,
 
         pub fn readableName(self: @This()) []const u8 {
             return switch (self) {
                 .word => "word",
                 .int => "integer",
                 .str => "string",
+                .char => "character",
             };
         }
     };
@@ -795,6 +797,7 @@ const Token = struct {
         word: []const u8,
         int: i64,
         str: []const u8,
+        char: u21,
     };
 
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -802,15 +805,24 @@ const Token = struct {
             .word => |value| try writer.print("word {s}", .{value}),
             .int => |value| try writer.print("int {d}", .{value}),
             .str => |value| try writer.print("str {s}", .{value}),
+            .char => |value| {
+                var utf8buf: [4]u8 = undefined;
+                const len = std.unicode.utf8Encode(value, &utf8buf) catch unreachable;
+                try writer.print("char {s}", .{utf8buf[0..len]});
+            },
         }
     }
 };
 
-// TODO: error handling
-fn unesc(token: Token, s: []const u8) ![]u8 {
+const UnescOptions = struct {
+    require_one_codepoint: bool = false,
+};
+
+fn unesc(loc: Location, s: []const u8, options: UnescOptions) ![]u8 {
     var result = try std.ArrayList(u8).initCapacity(g_a, s.len);
     errdefer result.deinit();
     var i: usize = 0;
+    var codepoints: usize = 0;
     while (i < s.len) : (i += 1) {
         if (s[i] != '\\') {
             try result.append(s[i]);
@@ -822,28 +834,58 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
             // early EOS, error
             std.debug.print(
                 "{}: escape at end of string\n",
-                .{token.loc.colOffset(i)},
+                .{loc.colOffset(i)},
             );
             return error.Parse;
         }
         switch (s[i]) {
-            '\\' => try result.append('\\'),
-            '\'' => try result.append('\''),
-            '"' => try result.append('"'),
+            '\\' => {
+                codepoints += 1;
+                try result.append('\\');
+            },
+            '\'' => {
+                codepoints += 1;
+                try result.append('\'');
+            },
+            '"' => {
+                codepoints += 1;
+                try result.append('"');
+            },
             // backspace
-            'b' => try result.append('\x08'),
+            'b' => {
+                codepoints += 1;
+                try result.append('\x08');
+            },
             // form feed
-            'f' => try result.append('\x0C'),
+            'f' => {
+                codepoints += 1;
+                try result.append('\x0C');
+            },
             // tab
-            't' => try result.append('\t'),
+            't' => {
+                codepoints += 1;
+                try result.append('\t');
+            },
             // newline
-            'n' => try result.append('\n'),
+            'n' => {
+                codepoints += 1;
+                try result.append('\n');
+            },
             // CR
-            'r' => try result.append('\r'),
+            'r' => {
+                codepoints += 1;
+                try result.append('\r');
+            },
             // vertical tab
-            'v' => try result.append('\x0B'),
+            'v' => {
+                codepoints += 1;
+                try result.append('\x0B');
+            },
             // BEL
-            'a' => try result.append('\x07'),
+            'a' => {
+                codepoints += 1;
+                try result.append('\x07');
+            },
             // octal escape
             '0'...'7' => {
                 var char_val = @as(usize, s[i] - '0');
@@ -864,10 +906,11 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                     // invalid octal escape
                     std.debug.print(
                         "{}: invalid octal escape '\\{o}'\n",
-                        .{ token.loc.colOffset(i), char_val },
+                        .{ loc.colOffset(i), char_val },
                     );
                     return error.Parse;
                 }
+                codepoints += 1;
                 try result.append(@intCast(u8, char_val));
             },
             // hex-style escape
@@ -887,7 +930,7 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                 while (j < count) : (j += 1) {
                     i += 1;
                     const messager = struct {
-                        token: Token,
+                        loc: Location,
                         count: usize,
                         first: u8,
                         start: usize,
@@ -897,7 +940,7 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                             std.debug.print(
                                 "{}: expected {d} hex digits after \\{c}, got only {d}\n",
                                 .{
-                                    self.token.loc.colOffset(self.start),
+                                    self.loc.colOffset(self.start),
                                     self.count,
                                     self.first,
                                     self.j,
@@ -905,7 +948,7 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                             );
                             return error.Parse;
                         }
-                    }{ .token = token, .count = count, .first = first, .start = start, .j = j };
+                    }{ .loc = loc, .count = count, .first = first, .start = start, .j = j };
 
                     if (i == s.len) {
                         return messager.printErr();
@@ -926,10 +969,11 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                 if (char_val > std.math.maxInt(u21)) {
                     std.debug.print(
                         "{}: escape '\\{c}{x}' is too big for Unicode\n",
-                        .{ token.loc.colOffset(start), first, char_val },
+                        .{ loc.colOffset(start), first, char_val },
                     );
                     return error.Parse;
                 }
+                codepoints += 1;
                 // codepoint goes back to utf8
                 var encoded_val: [4]u8 = undefined;
                 const num_bytes = try std.unicode.utf8Encode(@intCast(u21, char_val), &encoded_val);
@@ -940,11 +984,15 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
             else => {
                 std.debug.print(
                     "{}: unsupported escape '\\{c}'\n",
-                    .{ token.loc.colOffset(i), s[i] },
+                    .{ loc.colOffset(i), s[i] },
                 );
                 return error.Parse;
             },
         }
+    }
+    if (options.require_one_codepoint and codepoints > 1) {
+        std.debug.print("{}: expected one codepoint, got {d}\n", .{ loc, codepoints });
+        return error.Parse;
     }
     return try result.toOwnedSlice();
 }
@@ -993,9 +1041,9 @@ const Lexer = struct {
         }
     }
 
-    fn findTerminatingQuote(self: @This(), start: usize) ?usize {
+    fn findTerminatingQuote(self: @This(), start: usize, quote: u8) ?usize {
         var pos = start;
-        while (std.mem.indexOfScalarPos(u8, self.line, pos, '"')) |i| {
+        while (std.mem.indexOfScalarPos(u8, self.line, pos, quote)) |i| {
             // skip escaped quotes
             if (self.line[i - 1] == '\\') {
                 pos = i + 1;
@@ -1010,36 +1058,69 @@ const Lexer = struct {
         while (true) {
             const maybe_col = indexOfNonePos(u8, self.line, self.col, &std.ascii.whitespace);
             if (maybe_col) |col| {
-                if (self.line[col] == '"') {
-                    const col_end = self.findTerminatingQuote(col + 1) orelse {
-                        std.debug.print(
-                            "{s}:{d}:{d}: error: unclosed string literal\n",
-                            .{ self.file_path, self.row + 1, self.col + 1 },
+                switch (self.line[col]) {
+                    '"' => {
+                        const col_end = self.findTerminatingQuote(col + 1, '"') orelse {
+                            std.debug.print(
+                                "{s}:{d}:{d}: error: unclosed string literal\n",
+                                .{ self.file_path, self.row + 1, self.col + 1 },
+                            );
+                            return error.Lex;
+                        };
+                        const text = self.line[col + 1 .. col_end];
+                        self.col = col_end + 1;
+                        return Token{
+                            .loc = .{
+                                .file_path = self.file_path,
+                                .row = self.row + 1,
+                                .col = col + 1,
+                            },
+                            .type = .{ .str = text },
+                        };
+                    },
+                    '\'' => {
+                        const col_end = self.findTerminatingQuote(col + 1, '\'') orelse {
+                            std.debug.print(
+                                "{s}:{d}:{d}: error: unclosed character literal\n",
+                                .{ self.file_path, self.row + 1, self.col + 1 },
+                            );
+                            return error.Lex;
+                        };
+                        const text = try unesc(
+                            .{
+                                .file_path = self.file_path,
+                                .row = self.row + 1,
+                                .col = col,
+                            },
+                            self.line[col + 1 .. col_end],
+                            .{ .require_one_codepoint = true },
                         );
-                        return error.Lex;
-                    };
-                    const text = self.line[col + 1 .. col_end];
-                    self.col = col_end + 1;
-                    return Token{
-                        .loc = .{
-                            .file_path = self.file_path,
-                            .row = self.row + 1,
-                            .col = col + 1,
-                        },
-                        .type = .{ .str = text },
-                    };
-                } else {
-                    const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
-                    const result = Token{
-                        .loc = .{
-                            .file_path = self.file_path,
-                            .row = self.row + 1,
-                            .col = col + 1,
-                        },
-                        .type = lexWord(self.line[col..col_end]),
-                    };
-                    self.col = col_end;
-                    return result;
+                        defer g_a.free(text);
+                        self.col = col_end + 1;
+                        return Token{
+                            .loc = .{
+                                .file_path = self.file_path,
+                                .row = self.row + 1,
+                                .col = col,
+                            },
+                            .type = .{
+                                .char = std.unicode.utf8Decode(text) catch unreachable,
+                            },
+                        };
+                    },
+                    else => {
+                        const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
+                        const result = Token{
+                            .loc = .{
+                                .file_path = self.file_path,
+                                .row = self.row + 1,
+                                .col = col + 1,
+                            },
+                            .type = lexWord(self.line[col..col_end]),
+                        };
+                        self.col = col_end;
+                        return result;
+                    },
                 }
             } else if (self.lines.next()) |next_line| {
                 self.line = trimComment(next_line);
@@ -1112,7 +1193,8 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                 return error.Parse;
             },
             .int => |value| Op.init(.{ .PUSH_INT = value }, token),
-            .str => |value| Op.init(.{ .PUSH_STR = try unesc(token, value) }, token),
+            .str => |value| Op.init(.{ .PUSH_STR = try unesc(token.loc, value, .{}) }, token),
+            .char => |value| Op.init(.{ .PUSH_INT = value }, token),
         };
         switch (op.code) {
             .IF, .WHILE => {
