@@ -1,2 +1,3 @@
-macro write 1 1 syscall3 end
+include "lib/io.zorth"
+
 "Hello, World\n" write drop

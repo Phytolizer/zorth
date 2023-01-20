@@ -1,4 +1,5 @@
-macro write 1 1 syscall3 drop end
+include "lib/io.zorth"
+
 macro N 100 end
 
 mem N 2 - + 1 .

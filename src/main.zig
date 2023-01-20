@@ -5,7 +5,7 @@ const common = @import("common.zig");
 const DEBUGGING = .{
     .simulate_program = false,
     .unesc = false,
-    .load_program_from_file = false,
+    .load_program_from_file = true,
 };
 
 const Op = struct {
@@ -35,6 +35,7 @@ const Op = struct {
         WHILE,
         DO: usize,
         MACRO,
+        INCLUDE,
         DUP,
         DUP2,
         SWAP,
@@ -81,6 +82,13 @@ const Op = struct {
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         switch (self.code) {
             .PUSH_INT => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
+
+            .IF,
+            .ELSE,
+            .END,
+            .DO,
+            => |x| try writer.print("{s} {d}", .{ Code.tagName(self.code), x }),
+            .PUSH_STR => |x| try writer.print("{s} {s}", .{ Code.tagName(self.code), x }),
             else => try writer.writeAll(Code.tagName(self.code)),
         }
     }
@@ -120,6 +128,7 @@ const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "while", .WHILE },
     .{ "do", .{ .DO = undefined } },
     .{ "macro", .MACRO },
+    .{ "include", .INCLUDE },
     .{ "dup", .DUP },
     .{ "2dup", .DUP2 },
     .{ "swap", .SWAP },
@@ -275,8 +284,8 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 else
                     ip + 1;
             },
-            // this is a compile-time word
-            .MACRO => unreachable,
+            // compile-time words
+            .MACRO, .INCLUDE => unreachable,
             .DUP => {
                 const x = try pop(&stack);
                 try stack.appendNTimes(x, 2);
@@ -524,8 +533,8 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    jz .zorth_addr_{d}
                 \\
             , .{dest}),
-            // this is a compile-time word
-            .MACRO => unreachable,
+            // compile-time words
+            .MACRO, .INCLUDE => unreachable,
             .DUP => try w.writeAll(
                 \\    pop rax
                 \\    push rax
@@ -769,6 +778,14 @@ const Token = struct {
         int: i64,
         str: []const u8,
     };
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self.type) {
+            .word => |value| try writer.print("word {s}", .{value}),
+            .int => |value| try writer.print("int {d}", .{value}),
+            .str => |value| try writer.print("str {s}", .{value}),
+        }
+    }
 };
 
 // TODO: error handling
@@ -1019,6 +1036,13 @@ const Lexer = struct {
 
 fn loadProgramFromFile(path: []const u8) ![]Op {
     const contents = try std.fs.cwd().readFileAlloc(g_a, path, std.math.maxInt(usize));
+    var extra_contents = std.ArrayList([]const u8).init(g_a);
+    defer {
+        for (extra_contents.items) |text| {
+            g_a.free(text);
+        }
+        extra_contents.deinit();
+    }
     defer g_a.free(contents);
     var lexer = Lexer.init(path, contents);
     var program = std.ArrayList(Op).init(g_a);
@@ -1041,7 +1065,7 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     errdefer |e| if (e == error.Parse and DEBUGGING.load_program_from_file) {
         std.debug.print("INSTRUCTIONS SO FAR:\n", .{});
         for (program.items) |op, i| {
-            std.debug.print("{}: @{d}: {any}\n", .{ op.token.loc, i, op.code });
+            std.debug.print("{}: @{d}: {}\n", .{ op.token.loc, i, op });
         }
         std.debug.print("BLOCK STACK:\n", .{});
         for (stack.items) |item| {
@@ -1053,12 +1077,14 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     while (tokens.items.len > 0) {
         var token = tokens.pop();
         if (DEBUGGING.load_program_from_file)
-            std.debug.print("{}: ip {d}, token {any}\n", .{ token.loc, ip, token.type });
+            std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
 
         var op = switch (token.type) {
             .word => |value| if (BUILTIN_WORDS.get(value)) |code|
                 Op.init(code, token)
             else if (macros.get(value)) |macro| {
+                if (DEBUGGING.load_program_from_file)
+                    std.debug.print("... is a macro of length {d}\n", .{macro.tokens.items.len});
                 std.mem.reverse(Token, macro.tokens.items);
                 try tokens.appendSlice(macro.tokens.items);
                 // do not process any further
@@ -1123,6 +1149,49 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                 try program.append(op);
                 ip += 1;
             },
+            .INCLUDE => {
+                if (tokens.items.len == 0) {
+                    std.debug.print(
+                        "{}: error: expected include file path, got EOF\n",
+                        .{op.token.loc},
+                    );
+                    return error.Parse;
+                }
+                token = tokens.pop();
+                if (DEBUGGING.load_program_from_file)
+                    std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
+                const include_path = switch (token.type) {
+                    .str => |value| value,
+                    else => {
+                        std.debug.print(
+                            "{}: error: expected include path to be {s}, got {s}\n",
+                            .{
+                                token.loc,
+                                Token.Tag.readableName(.str),
+                                std.meta.activeTag(token.type).readableName(),
+                            },
+                        );
+                        return error.Parse;
+                    },
+                };
+                const included_contents = std.fs.cwd().readFileAlloc(g_a, include_path, std.math.maxInt(usize)) catch |e| switch (e) {
+                    error.FileNotFound => {
+                        std.debug.print(
+                            "{}: error: file `{s}` not found\n",
+                            .{ token.loc, include_path },
+                        );
+                        return error.Parse;
+                    },
+                    else => return e,
+                };
+                try extra_contents.append(included_contents);
+                var include_lexer = Lexer.init(include_path, included_contents);
+                const include_start = tokens.items.len;
+                while (try include_lexer.next()) |include_token| {
+                    try tokens.append(include_token);
+                }
+                std.mem.reverse(Token, tokens.items[include_start..]);
+            },
             .MACRO => {
                 if (tokens.items.len == 0) {
                     std.debug.print(
@@ -1132,6 +1201,8 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
                     return error.Parse;
                 }
                 token = tokens.pop();
+                if (DEBUGGING.load_program_from_file)
+                    std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
                 const value = switch (token.type) {
                     .word => |value| value,
                     else => {
@@ -1168,6 +1239,11 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
 
                 findEnd: {
                     while (tokens.popOrNull()) |definition_token| {
+                        if (DEBUGGING.load_program_from_file)
+                            std.debug.print(
+                                "{}: ip {d}, {}\n",
+                                .{ definition_token.loc, ip, definition_token },
+                            );
                         switch (definition_token.type) {
                             .word => |tvalue| if (streq(tvalue, "end")) {
                                 break :findEnd;
@@ -1202,10 +1278,12 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
         return error.Parse;
     }
     const result = try program.toOwnedSlice();
-    if (DEBUGGING.load_program_from_file)
+    if (DEBUGGING.load_program_from_file) {
+        std.debug.print("INSTRUCTIONS:\n", .{});
         for (result) |op, i| {
-            std.debug.print("{d:>2}: {any}\n", .{ i, op.code });
-        };
+            std.debug.print("{}: @{d}: {}\n", .{ op.token.loc, i, op });
+        }
+    }
     return result;
 }
 
