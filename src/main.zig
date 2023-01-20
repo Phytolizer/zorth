@@ -4,7 +4,7 @@ const common = @import("common.zig");
 
 const DEBUGGING = .{
     .simulate_program = false,
-    .unesc = true,
+    .unesc = false,
 };
 
 const Op = struct {
@@ -971,14 +971,18 @@ const Lexer = struct {
         return null;
     }
 
-    pub fn next(self: *@This()) ?Token {
+    pub fn next(self: *@This()) !?Token {
         while (true) {
             const maybe_col = indexOfNonePos(u8, self.line, self.col, &std.ascii.whitespace);
             if (maybe_col) |col| {
                 if (self.line[col] == '"') {
-                    const col_end = self.findTerminatingQuote(col + 1) orelse
-                        // TODO: error here
-                        unreachable;
+                    const col_end = self.findTerminatingQuote(col + 1) orelse {
+                        std.debug.print(
+                            "{s}:{d}:{d}: error: unclosed string literal",
+                            .{ self.file_path, self.row + 1, self.col + 1 },
+                        );
+                        return error.Lex;
+                    };
                     const text = self.line[col + 1 .. col_end];
                     self.col = col_end + 1;
                     return Token{
@@ -1015,7 +1019,7 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     var lexer = Lexer.init(path, contents);
     var ops = std.ArrayList(Op).init(g_a);
     errdefer ops.deinit();
-    while (lexer.next()) |token| {
+    while (try lexer.next()) |token| {
         try ops.append(try parseTokenAsOp(token));
     }
     var result = try ops.toOwnedSlice();
