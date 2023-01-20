@@ -24,6 +24,7 @@ const Op = struct {
         PUSH_STR: []u8,
         PLUS,
         MINUS,
+        MUL,
         MOD,
         SHR,
         SHL,
@@ -113,6 +114,7 @@ const MEM_CAPACITY = 640_000;
 const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .PLUS },
     .{ "-", .MINUS },
+    .{ "*", .MUL },
     .{ "mod", .MOD },
     .{ "print", .PRINT },
     .{ "=", .EQ },
@@ -226,6 +228,12 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(x - y);
+                ip += 1;
+            },
+            .MUL => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(x * y);
                 ip += 1;
             },
             .MOD => {
@@ -474,6 +482,13 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rbx
                 \\    pop rax
                 \\    sub rax, rbx
+                \\    push rax
+                \\
+            ),
+            .MUL => try w.writeAll(
+                \\    pop rbx
+                \\    pop rax
+                \\    mul rbx
                 \\    push rax
                 \\
             ),
