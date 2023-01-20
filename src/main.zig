@@ -735,19 +735,107 @@ fn parseTokenAsOp(token: Token) !Op {
     }
 }
 
+// TODO: error handling
 fn unesc(s: []const u8) ![]u8 {
     var result = try std.ArrayList(u8).initCapacity(g_a, s.len);
     errdefer result.deinit();
     var i: usize = 0;
     while (i < s.len) : (i += 1) {
-        if (s[i] == '\\') {
-            i += 1;
-            switch (s[i]) {
-                'n' => try result.append('\n'),
-                else => std.debug.panic("unsupported escape '\\{c}'", .{s[i]}),
-            }
-        } else {
+        if (s[i] != '\\') {
             try result.append(s[i]);
+            continue;
+        }
+
+        i += 1;
+        if (i == s.len) {
+            // early EOS, error
+            std.debug.panic("escape at end of string", .{});
+        }
+        switch (s[i]) {
+            '\\' => try result.append('\\'),
+            '\'' => try result.append('\''),
+            '"' => try result.append('"'),
+            // backspace
+            'b' => try result.append('\x08'),
+            // form feed
+            'f' => try result.append('\x0C'),
+            // tab
+            't' => try result.append('\t'),
+            // newline
+            'n' => try result.append('\n'),
+            // CR
+            'r' => try result.append('\r'),
+            // vertical tab
+            'v' => try result.append('\x0B'),
+            // BEL
+            'a' => try result.append('\x07'),
+            // octal escape
+            '0'...'7' => {
+                var char_val = @as(usize, s[i] - '0');
+                i += 1;
+                comptime var j = 0;
+                inline while (j < 2) : (j += 1) {
+                    if (i < s.len and s[i] >= '0' and s[i] <= '7') {
+                        char_val = char_val << 3 + @intCast(u6, s[i] - '0');
+                        i += 1;
+                    }
+                }
+                if (char_val > 0o377) {
+                    // invalid octal escape
+                    std.debug.panic("invalid octal escape '\\{o}'", .{char_val});
+                }
+                try result.append(@intCast(u8, char_val));
+            },
+            // hex-style escape
+            'x', 'u', 'U' => {
+                const first = s[i];
+                const count: usize = switch (first) {
+                    'x' => 2,
+                    'u' => 4,
+                    'U' => 8,
+                    else => unreachable,
+                };
+                i += 1;
+                var char_val: usize = 0;
+                var j: usize = 0;
+                while (j < count) : (j += 1) {
+                    // HACK: this struct panics with a particular message
+                    const panicker = struct {
+                        count: usize,
+                        first: u8,
+                        j: usize,
+
+                        fn panic(self: @This()) noreturn {
+                            std.debug.panic(
+                                "expected {d} hex digits after \\{c}, got only {d}",
+                                .{ self.count, self.first, self.j },
+                            );
+                        }
+                    }{ .count = count, .first = first, .j = j };
+
+                    if (i == s.len) {
+                        panicker.panic();
+                    }
+                    switch (s[i]) {
+                        '0'...'9' => char_val += s[i] - '0',
+                        'a'...'f' => char_val += s[i] - 'a' + 10,
+                        'A'...'F' => char_val += s[i] - 'A' + 10,
+                        else => panicker.panic(),
+                    }
+                    i += 1;
+                }
+                if (char_val > std.math.maxInt(u21)) {
+                    std.debug.panic(
+                        "escape '\\{c}{x}' is too big for Unicode",
+                        .{ first, char_val },
+                    );
+                }
+                // codepoint goes back to utf8
+                var encoded_val: [4]u8 = undefined;
+                const num_bytes = try std.unicode.utf8Encode(@intCast(u21, char_val), &encoded_val);
+                try result.appendSlice(encoded_val[0..num_bytes]);
+            },
+            else => std.debug.panic("unsupported escape '\\{c}'", .{s[i]}),
         }
     }
     return try result.toOwnedSlice();
@@ -861,12 +949,22 @@ const Lexer = struct {
         }
     }
 
+    fn findTerminatingQuote(self: @This(), start: usize) ?usize {
+        var pos = start;
+        while (std.mem.indexOfScalarPos(u8, self.line, pos, '"')) |i| {
+            // skip escaped quotes
+            if (self.line[i - 1] == '\\') continue;
+            return i;
+        }
+        return null;
+    }
+
     pub fn next(self: *@This()) ?Token {
         while (true) {
             const maybe_col = indexOfNonePos(u8, self.line, self.col, &std.ascii.whitespace);
             if (maybe_col) |col| {
                 if (self.line[col] == '"') {
-                    const col_end = std.mem.indexOfScalarPos(u8, self.line, col + 1, '"') orelse
+                    const col_end = self.findTerminatingQuote(col + 1) orelse
                         // TODO: error here
                         unreachable;
                     const text = self.line[col + 1 .. col_end];
