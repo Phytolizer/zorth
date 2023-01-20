@@ -1,7 +1,3 @@
 [submodule "deps/known-folders"]
 	path = deps/known-folders
 	url = https://github.com/ziglibs/known-folders
-[submodule "deps/zignite"]
-	path = deps/zignite
-	url = https://github.com/Phytolizer/zignite.git
-	branch = fix/compile
