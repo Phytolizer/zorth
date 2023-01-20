@@ -5,16 +5,17 @@ const common = @import("common.zig");
 const DEBUGGING = .{
     .simulate_program = false,
     .unesc = false,
+    .load_program_from_file = false,
 };
 
 const Op = struct {
     code: Code,
-    loc: Token,
+    token: Token,
 
-    pub fn init(code: Code, loc: Token) @This() {
+    pub fn init(code: Code, token: Token) @This() {
         return .{
             .code = code,
-            .loc = loc,
+            .token = token,
         };
     }
 
@@ -31,6 +32,9 @@ const Op = struct {
         IF: usize,
         ELSE: usize,
         END: usize,
+        WHILE,
+        DO: usize,
+        MACRO,
         DUP,
         DUP2,
         SWAP,
@@ -42,8 +46,6 @@ const Op = struct {
         LT,
         GE,
         LE,
-        WHILE,
-        DO: usize,
         MEM,
         LOAD,
         STORE,
@@ -115,13 +117,14 @@ const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "if", .{ .IF = undefined } },
     .{ "end", .{ .END = undefined } },
     .{ "else", .{ .ELSE = undefined } },
+    .{ "while", .WHILE },
+    .{ "do", .{ .DO = undefined } },
+    .{ "macro", .MACRO },
     .{ "dup", .DUP },
     .{ "2dup", .DUP2 },
     .{ "swap", .SWAP },
     .{ "drop", .DROP },
     .{ "over", .OVER },
-    .{ "while", .WHILE },
-    .{ "do", .{ .DO = undefined } },
     .{ "mem", .MEM },
     .{ ".", .STORE },
     .{ ",", .LOAD },
@@ -140,6 +143,22 @@ fn notImplemented() noreturn {
     std.log.err("not implemented", .{});
     unreachable;
 }
+
+const Macro = struct {
+    loc: Location,
+    tokens: std.ArrayList(Token),
+
+    pub fn init(loc: Location) @This() {
+        return .{
+            .loc = loc,
+            .tokens = std.ArrayList(Token).init(g_a),
+        };
+    }
+
+    pub fn deinit(self: @This()) void {
+        self.tokens.deinit();
+    }
+};
 
 fn pop(stack: anytype) !@typeInfo(@TypeOf(stack.items)).Pointer.child {
     comptime switch (@typeInfo(@TypeOf(stack))) {
@@ -246,6 +265,18 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
             .END => |dest| {
                 ip = dest;
             },
+            .WHILE => {
+                ip += 1;
+            },
+            .DO => |dest| {
+                const x = try pop(&stack);
+                ip = if (x == 0)
+                    dest
+                else
+                    ip + 1;
+            },
+            // this is a compile-time word
+            .MACRO => unreachable,
             .DUP => {
                 const x = try pop(&stack);
                 try stack.appendNTimes(x, 2);
@@ -308,16 +339,6 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 const x = try pop(&stack);
                 try stack.append(@boolToInt(x <= y));
                 ip += 1;
-            },
-            .WHILE => {
-                ip += 1;
-            },
-            .DO => |dest| {
-                const x = try pop(&stack);
-                ip = if (x == 0)
-                    dest
-                else
-                    ip + 1;
             },
             .MEM => {
                 try stack.append(STR_CAPACITY);
@@ -496,6 +517,15 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                     \\
                 , .{dest});
             },
+            .WHILE => {},
+            .DO => |dest| try w.print(
+                \\    pop rax
+                \\    test rax, rax
+                \\    jz .zorth_addr_{d}
+                \\
+            , .{dest}),
+            // this is a compile-time word
+            .MACRO => unreachable,
             .DUP => try w.writeAll(
                 \\    pop rax
                 \\    push rax
@@ -590,13 +620,6 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    push rcx
                 \\
             ),
-            .WHILE => {},
-            .DO => |dest| try w.print(
-                \\    pop rax
-                \\    test rax, rax
-                \\    jz .zorth_addr_{d}
-                \\
-            , .{dest}),
             .MEM => try w.writeAll(
                 \\    push mem
                 \\
@@ -705,38 +728,48 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
     }
 }
 
-const Token = struct {
+const Location = struct {
     file_path: []const u8,
     row: usize,
     col: usize,
+
+    pub fn colOffset(self: @This(), offset: usize) @This() {
+        return .{
+            .file_path = self.file_path,
+            .row = self.row,
+            .col = self.col + offset,
+        };
+    }
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{s}:{d}:{d}", .{ self.file_path, self.row, self.col });
+    }
+};
+
+const Token = struct {
+    loc: Location,
     type: Type,
 
-    const Type = union(enum) {
+    pub const Tag = enum {
+        word,
+        int,
+        str,
+
+        pub fn readableName(self: @This()) []const u8 {
+            return switch (self) {
+                .word => "word",
+                .int => "integer",
+                .str => "string",
+            };
+        }
+    };
+
+    pub const Type = union(Tag) {
         word: []const u8,
         int: i64,
         str: []const u8,
     };
 };
-
-fn parseTokenAsOp(token: Token) !Op {
-    switch (token.type) {
-        .word => |word| if (BUILTIN_WORDS.get(word)) |code| {
-            return Op.init(code, token);
-        } else {
-            std.debug.print("{s}:{d}:{d}: unknown word {s}\n", .{
-                token.file_path,
-                token.row,
-                token.col,
-                word,
-            });
-            return error.Parse;
-        },
-        .str => |s| return Op.init(.{
-            .PUSH_STR = try unesc(token, s),
-        }, token),
-        .int => |i| return Op.init(.{ .PUSH_INT = i }, token),
-    }
-}
 
 // TODO: error handling
 fn unesc(token: Token, s: []const u8) ![]u8 {
@@ -753,8 +786,8 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
         if (i == s.len) {
             // early EOS, error
             std.debug.print(
-                "{s}:{d}:{d}: escape at end of string\n",
-                .{ token.file_path, token.row, token.col + i },
+                "{}: escape at end of string\n",
+                .{token.loc.colOffset(i)},
             );
             return error.Parse;
         }
@@ -795,8 +828,8 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                 if (char_val > 0o377) {
                     // invalid octal escape
                     std.debug.print(
-                        "{s}:{d}:{d}: invalid octal escape '\\{o}'\n",
-                        .{ token.file_path, token.row, token.col + i, char_val },
+                        "{}: invalid octal escape '\\{o}'\n",
+                        .{ token.loc.colOffset(i), char_val },
                     );
                     return error.Parse;
                 }
@@ -827,11 +860,9 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
 
                         fn printErr(self: @This()) error{Parse} {
                             std.debug.print(
-                                "{s}:{d}:{d}: expected {d} hex digits after \\{c}, got only {d}\n",
+                                "{}: expected {d} hex digits after \\{c}, got only {d}\n",
                                 .{
-                                    self.token.file_path,
-                                    self.token.row,
-                                    self.token.col + self.start,
+                                    self.token.loc.colOffset(self.start),
                                     self.count,
                                     self.first,
                                     self.j,
@@ -859,8 +890,8 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
                     std.debug.print("result: {d} ({x})\n", .{ char_val, char_val });
                 if (char_val > std.math.maxInt(u21)) {
                     std.debug.print(
-                        "{s}:{d}:{d}: escape '\\{c}{x}' is too big for Unicode\n",
-                        .{ token.file_path, token.row, token.col + start, first, char_val },
+                        "{}: escape '\\{c}{x}' is too big for Unicode\n",
+                        .{ token.loc.colOffset(start), first, char_val },
                     );
                     return error.Parse;
                 }
@@ -873,78 +904,14 @@ fn unesc(token: Token, s: []const u8) ![]u8 {
             },
             else => {
                 std.debug.print(
-                    "{s}:{d}:{d}: unsupported escape '\\{c}'\n",
-                    .{ token.file_path, token.row, token.col + i, s[i] },
+                    "{}: unsupported escape '\\{c}'\n",
+                    .{ token.loc.colOffset(i), s[i] },
                 );
                 return error.Parse;
             },
         }
     }
     return try result.toOwnedSlice();
-}
-
-fn resolveJumps(program: []Op) !void {
-    var stack = std.ArrayList(usize).init(g_a);
-    defer stack.deinit();
-    for (program) |*op, ip| {
-        switch (op.code) {
-            .IF, .WHILE => try stack.append(ip),
-            .ELSE => {
-                const if_ip = try pop(&stack);
-                switch (program[if_ip].code) {
-                    .IF => |*dest| {
-                        dest.* = ip + 1;
-                        try stack.append(ip);
-                    },
-                    else => {
-                        const loc = program[if_ip].loc;
-                        std.debug.print(
-                            "{s}:{d}:{d}: error: `else` without `if`\n",
-                            .{ loc.file_path, loc.row, loc.col },
-                        );
-                        return error.Parse;
-                    },
-                }
-            },
-            .DO => |*dest| {
-                const while_ip = try pop(&stack);
-                dest.* = while_ip;
-                try stack.append(ip);
-            },
-            .END => |*end_dest| {
-                const block_ip = try pop(&stack);
-                switch (program[block_ip].code) {
-                    .IF, .ELSE => |*dest| {
-                        dest.* = ip;
-                        end_dest.* = ip + 1;
-                    },
-                    .DO => |*dest| {
-                        end_dest.* = dest.*;
-                        dest.* = ip + 1;
-                    },
-                    else => {
-                        const loc = program[block_ip].loc;
-                        std.debug.print(
-                            "{s}:{d}:{d}: error: `end` without `if`/`do`\n",
-                            .{ loc.file_path, loc.row, loc.col },
-                        );
-                        return error.Parse;
-                    },
-                }
-            },
-            else => {},
-        }
-    }
-
-    if (stack.items.len > 0) {
-        const top = pop(&stack) catch unreachable;
-        const loc = program[top].loc;
-        std.debug.print(
-            "{s}:{d}:{d}: error: unclosed block\n",
-            .{ loc.file_path, loc.row, loc.col },
-        );
-        return error.Parse;
-    }
 }
 
 fn indexOfNonePos(comptime T: type, slice: []const T, start_index: usize, values: []const T) ?usize {
@@ -1019,17 +986,21 @@ const Lexer = struct {
                     const text = self.line[col + 1 .. col_end];
                     self.col = col_end + 1;
                     return Token{
-                        .file_path = self.file_path,
-                        .row = self.row + 1,
-                        .col = col + 1,
+                        .loc = .{
+                            .file_path = self.file_path,
+                            .row = self.row + 1,
+                            .col = col + 1,
+                        },
                         .type = .{ .str = text },
                     };
                 } else {
                     const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
                     const result = Token{
-                        .file_path = self.file_path,
-                        .row = self.row + 1,
-                        .col = col + 1,
+                        .loc = .{
+                            .file_path = self.file_path,
+                            .row = self.row + 1,
+                            .col = col + 1,
+                        },
                         .type = lexWord(self.line[col..col_end]),
                     };
                     self.col = col_end;
@@ -1050,14 +1021,173 @@ fn loadProgramFromFile(path: []const u8) ![]Op {
     const contents = try std.fs.cwd().readFileAlloc(g_a, path, std.math.maxInt(usize));
     defer g_a.free(contents);
     var lexer = Lexer.init(path, contents);
-    var ops = std.ArrayList(Op).init(g_a);
-    errdefer ops.deinit();
+    var program = std.ArrayList(Op).init(g_a);
+    errdefer program.deinit();
+    var tokens = std.ArrayList(Token).init(g_a);
+    defer tokens.deinit();
     while (try lexer.next()) |token| {
-        try ops.append(try parseTokenAsOp(token));
+        try tokens.append(token);
     }
-    var result = try ops.toOwnedSlice();
-    errdefer g_a.free(result);
-    try resolveJumps(result);
+    var macros = std.StringHashMap(Macro).init(g_a);
+    defer {
+        var it = macros.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
+        macros.deinit();
+    }
+    var stack = std.ArrayList(usize).init(g_a);
+    defer stack.deinit();
+    std.mem.reverse(Token, tokens.items);
+    var ip: usize = 0;
+    while (tokens.items.len > 0) {
+        var token = tokens.pop();
+        var op = switch (token.type) {
+            .word => |value| if (BUILTIN_WORDS.get(value)) |code|
+                Op.init(code, token)
+            else if (macros.get(value)) |macro| {
+                std.mem.reverse(Token, macro.tokens.items);
+                try tokens.appendSlice(macro.tokens.items);
+                // do not process any further
+                continue;
+            } else {
+                std.debug.print("{}: unknown word `{s}`\n", .{ token.loc, value });
+                return error.Parse;
+            },
+            .int => |value| Op.init(.{ .PUSH_INT = value }, token),
+            .str => |value| Op.init(.{ .PUSH_STR = try unesc(token, value) }, token),
+        };
+        switch (op.code) {
+            .IF, .WHILE => {
+                try stack.append(ip);
+                try program.append(op);
+            },
+            .ELSE => {
+                const if_ip = try pop(&stack);
+                switch (program.items[if_ip].code) {
+                    .IF => |*dest| {
+                        dest.* = ip + 1;
+                        try stack.append(ip);
+                    },
+                    else => {
+                        std.debug.print(
+                            "{}: error: `else` without `if`\n",
+                            .{program.items[if_ip].token.loc},
+                        );
+                        return error.Parse;
+                    },
+                }
+                try program.append(op);
+            },
+            .DO => |*dest| {
+                const while_ip = try pop(&stack);
+                dest.* = while_ip;
+                try stack.append(ip);
+                try program.append(op);
+            },
+            .END => |*end_dest| {
+                const block_ip = try pop(&stack);
+                switch (program.items[block_ip].code) {
+                    .IF, .ELSE => |*dest| {
+                        dest.* = ip;
+                        end_dest.* = ip + 1;
+                    },
+                    .DO => |*dest| {
+                        end_dest.* = dest.*;
+                        dest.* = ip + 1;
+                    },
+                    else => {
+                        std.debug.print(
+                            "{}: error: `end` without `if`/`do`\n",
+                            .{program.items[block_ip].token.loc},
+                        );
+                        return error.Parse;
+                    },
+                }
+                try program.append(op);
+            },
+            .MACRO => {
+                if (tokens.items.len == 0) {
+                    std.debug.print(
+                        "{}: error: expected macro name, got EOF\n",
+                        .{op.token.loc},
+                    );
+                    return error.Parse;
+                }
+                token = tokens.pop();
+                const value = switch (token.type) {
+                    .word => |value| value,
+                    else => {
+                        std.debug.print(
+                            "{}: error: expected macro name to be {s}, got {s}\n",
+                            .{
+                                token.loc,
+                                Token.Tag.readableName(.word),
+                                std.meta.activeTag(token.type).readableName(),
+                            },
+                        );
+                        return error.Parse;
+                    },
+                };
+                if (macros.get(value)) |existing| {
+                    std.debug.print(
+                        "{}: error: redefinition of existing macro `{s}`\n",
+                        .{ token.loc, value },
+                    );
+                    std.debug.print(
+                        "{}: note: first definition is here\n",
+                        .{existing.loc},
+                    );
+                    return error.Parse;
+                }
+                if (BUILTIN_WORDS.get(value) != null) {
+                    std.debug.print(
+                        "{}: error: redefinition of built-in word `{s}`\n",
+                        .{ token.loc, value },
+                    );
+                    return error.Parse;
+                }
+                var macro = Macro.init(op.token.loc);
+
+                findEnd: {
+                    while (tokens.popOrNull()) |definition_token| {
+                        switch (definition_token.type) {
+                            .word => |tvalue| if (streq(tvalue, "end")) {
+                                break :findEnd;
+                            },
+                            else => {},
+                        }
+                        try macro.tokens.append(definition_token);
+                    }
+
+                    std.debug.print(
+                        "{}: error: expected `end` after macro definition, got EOF\n",
+                        .{op.token.loc},
+                    );
+                    return error.Parse;
+                }
+                try macros.put(value, macro);
+            },
+            else => try program.append(op),
+        }
+
+        ip += 1;
+    }
+
+    if (stack.items.len > 0) {
+        const top = pop(&stack) catch unreachable;
+        const token = program.items[top].token;
+        std.debug.print(
+            "{}: error: unclosed block\n",
+            .{token.loc},
+        );
+        return error.Parse;
+    }
+    const result = try program.toOwnedSlice();
+    if (DEBUGGING.load_program_from_file)
+        for (result) |op, i| {
+            std.debug.print("{d:>2}: {any}\n", .{ i, op.code });
+        };
     return result;
 }
 
@@ -1167,7 +1297,7 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         try compileProgram(program, src_path);
         const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
         defer a.free(obj_path);
-        _ = try common.runCmd(a, &.{ "nasm", "-f", "elf64", src_path, "-o", obj_path }, .{});
+        _ = try common.runCmd(a, &.{ "nasm", "-f", "elf64", "-gdwarf", src_path, "-o", obj_path }, .{});
         const exe_path = try std.fs.path.join(a, &.{ basedir, basename });
         defer a.free(exe_path);
         _ = try common.runCmd(a, &.{ "ld", "-o", exe_path, obj_path }, .{});
