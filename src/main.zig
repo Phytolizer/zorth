@@ -1564,11 +1564,11 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
                 basedir = std.fs.path.dirname(output_path) orelse ".";
             }
         }
-        const src_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".nasm" });
+        const src_path = try std.fs.path.join(a, &.{ temp_path, "output.asm" });
         defer a.free(src_path);
         std.log.info("Generating {s}", .{src_path});
         try compileProgram(program, src_path);
-        const obj_path = try std.mem.concat(a, u8, &.{ temp_path, "/", basename, ".o" });
+        const obj_path = try std.fs.path.join(a, &.{ temp_path, "output.o" });
         defer a.free(obj_path);
         _ = try common.runCmd(a, &.{ "nasm", "-f", "elf64", "-gdwarf", src_path, "-o", obj_path }, .{});
         const exe_path = try std.fs.path.join(a, &.{ basedir, basename });
