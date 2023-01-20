@@ -732,14 +732,14 @@ fn parseTokenAsOp(token: Token) !Op {
             return error.Parse;
         },
         .str => |s| return Op.init(.{
-            .PUSH_STR = try unesc(s),
+            .PUSH_STR = try unesc(token, s),
         }, token),
         .int => |i| return Op.init(.{ .PUSH_INT = i }, token),
     }
 }
 
 // TODO: error handling
-fn unesc(s: []const u8) ![]u8 {
+fn unesc(token: Token, s: []const u8) ![]u8 {
     var result = try std.ArrayList(u8).initCapacity(g_a, s.len);
     errdefer result.deinit();
     var i: usize = 0;
@@ -752,7 +752,11 @@ fn unesc(s: []const u8) ![]u8 {
         i += 1;
         if (i == s.len) {
             // early EOS, error
-            std.debug.panic("escape at end of string", .{});
+            std.debug.print(
+                "{s}:{d}:{d}: escape at end of string\n",
+                .{ token.file_path, token.row, token.col + i },
+            );
+            return error.Parse;
         }
         switch (s[i]) {
             '\\' => try result.append('\\'),
@@ -775,17 +779,26 @@ fn unesc(s: []const u8) ![]u8 {
             // octal escape
             '0'...'7' => {
                 var char_val = @as(usize, s[i] - '0');
-                i += 1;
                 comptime var j = 0;
+                if (DEBUGGING.unesc)
+                    std.debug.print("Decoding octal escape sequence '{c}'\n", .{s[i]});
                 inline while (j < 2) : (j += 1) {
+                    i += 1;
                     if (i < s.len and s[i] >= '0' and s[i] <= '7') {
-                        char_val = char_val << 3 + @intCast(u6, s[i] - '0');
-                        i += 1;
+                        if (DEBUGGING.unesc)
+                            std.debug.print("Char '{c}' is valid\n", .{s[i]});
+                        char_val = (char_val << 3) + @intCast(u6, s[i] - '0');
                     }
                 }
+                if (DEBUGGING.unesc)
+                    std.debug.print("Result: {d}\n", .{char_val});
                 if (char_val > 0o377) {
                     // invalid octal escape
-                    std.debug.panic("invalid octal escape '\\{o}'", .{char_val});
+                    std.debug.print(
+                        "{s}:{d}:{d}: invalid octal escape '\\{o}'\n",
+                        .{ token.file_path, token.row, token.col + i, char_val },
+                    );
+                    return error.Parse;
                 }
                 try result.append(@intCast(u8, char_val));
             },
@@ -802,30 +815,40 @@ fn unesc(s: []const u8) ![]u8 {
                     std.debug.print("Decoding escape sequence '{c}'\n", .{first});
                 var char_val: usize = 0;
                 var j: usize = 0;
+                const start = i;
                 while (j < count) : (j += 1) {
                     i += 1;
-                    // HACK: this struct panics with a particular message
-                    const panicker = struct {
+                    const messager = struct {
+                        token: Token,
                         count: usize,
                         first: u8,
+                        start: usize,
                         j: usize,
 
-                        fn panic(self: @This()) noreturn {
-                            std.debug.panic(
-                                "expected {d} hex digits after \\{c}, got only {d}",
-                                .{ self.count, self.first, self.j },
+                        fn printErr(self: @This()) error{Parse} {
+                            std.debug.print(
+                                "{s}:{d}:{d}: expected {d} hex digits after \\{c}, got only {d}\n",
+                                .{
+                                    self.token.file_path,
+                                    self.token.row,
+                                    self.token.col + self.start,
+                                    self.count,
+                                    self.first,
+                                    self.j,
+                                },
                             );
+                            return error.Parse;
                         }
-                    }{ .count = count, .first = first, .j = j };
+                    }{ .token = token, .count = count, .first = first, .start = start, .j = j };
 
                     if (i == s.len) {
-                        panicker.panic();
+                        return messager.printErr();
                     }
                     const increment = switch (s[i]) {
                         '0'...'9' => s[i] - '0',
                         'a'...'f' => s[i] - 'a' + 10,
                         'A'...'F' => s[i] - 'A' + 10,
-                        else => panicker.panic(),
+                        else => return messager.printErr(),
                     };
                     char_val <<= 4;
                     char_val += increment;
@@ -835,10 +858,11 @@ fn unesc(s: []const u8) ![]u8 {
                 if (DEBUGGING.unesc)
                     std.debug.print("result: {d} ({x})\n", .{ char_val, char_val });
                 if (char_val > std.math.maxInt(u21)) {
-                    std.debug.panic(
-                        "escape '\\{c}{x}' is too big for Unicode",
-                        .{ first, char_val },
+                    std.debug.print(
+                        "{s}:{d}:{d}: escape '\\{c}{x}' is too big for Unicode\n",
+                        .{ token.file_path, token.row, token.col + start, first, char_val },
                     );
+                    return error.Parse;
                 }
                 // codepoint goes back to utf8
                 var encoded_val: [4]u8 = undefined;
@@ -847,7 +871,13 @@ fn unesc(s: []const u8) ![]u8 {
                     std.debug.print("as unicode: '{s}'\n", .{encoded_val[0..num_bytes]});
                 try result.appendSlice(encoded_val[0..num_bytes]);
             },
-            else => std.debug.panic("unsupported escape '\\{c}'", .{s[i]}),
+            else => {
+                std.debug.print(
+                    "{s}:{d}:{d}: unsupported escape '\\{c}'\n",
+                    .{ token.file_path, token.row, token.col + i, s[i] },
+                );
+                return error.Parse;
+            },
         }
     }
     return try result.toOwnedSlice();
@@ -965,7 +995,10 @@ const Lexer = struct {
         var pos = start;
         while (std.mem.indexOfScalarPos(u8, self.line, pos, '"')) |i| {
             // skip escaped quotes
-            if (self.line[i - 1] == '\\') continue;
+            if (self.line[i - 1] == '\\') {
+                pos = i + 1;
+                continue;
+            }
             return i;
         }
         return null;
@@ -978,7 +1011,7 @@ const Lexer = struct {
                 if (self.line[col] == '"') {
                     const col_end = self.findTerminatingQuote(col + 1) orelse {
                         std.debug.print(
-                            "{s}:{d}:{d}: error: unclosed string literal",
+                            "{s}:{d}:{d}: error: unclosed string literal\n",
                             .{ self.file_path, self.row + 1, self.col + 1 },
                         );
                         return error.Lex;
