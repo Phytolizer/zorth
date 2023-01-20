@@ -25,6 +25,7 @@ const Op = struct {
         PLUS,
         MINUS,
         MUL,
+        DIV,
         MOD,
         SHR,
         SHL,
@@ -114,6 +115,7 @@ const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .PLUS },
     .{ "-", .MINUS },
     .{ "*", .MUL },
+    .{ "/", .DIV },
     .{ "mod", .MOD },
     .{ "print", .PRINT },
     .{ "=", .EQ },
@@ -232,6 +234,12 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 const y = try pop(&stack);
                 const x = try pop(&stack);
                 try stack.append(x * y);
+                ip += 1;
+            },
+            .DIV => {
+                const y = try pop(&stack);
+                const x = try pop(&stack);
+                try stack.append(@divTrunc(x, y));
                 ip += 1;
             },
             .MOD => {
@@ -481,6 +489,14 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    pop rbx
                 \\    pop rax
                 \\    mul rbx
+                \\    push rax
+                \\
+            ),
+            .DIV => try w.writeAll(
+                \\    xor rdx, rdx
+                \\    pop rbx
+                \\    pop rax
+                \\    div rbx
                 \\    push rax
                 \\
             ),
