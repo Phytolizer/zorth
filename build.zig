@@ -5,6 +5,10 @@ const pkgs = [_]std.build.Pkg{
         .name = "known-folders",
         .source = .{ .path = "deps/known-folders/known-folders.zig" },
     },
+    .{
+        .name = "common",
+        .source = .{ .path = "src/common.zig" },
+    },
 };
 
 pub fn build(b: *std.build.Builder) void {
@@ -36,6 +40,10 @@ pub fn build(b: *std.build.Builder) void {
         .name = "zorth",
         .dependencies = &pkgs,
         .source = .{ .path = "src/main.zig" },
+    });
+    tests.addPackage(.{
+        .name = "common",
+        .source = .{ .path = "src/common.zig" },
     });
     tests.install();
 

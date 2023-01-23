@@ -1,6 +1,6 @@
 const std = @import("std");
 const known_folders = @import("known-folders");
-const common = @import("common.zig");
+const common = @import("common");
 
 const DEBUGGING = .{
     .simulate_program = false,

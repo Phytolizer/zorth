@@ -1,6 +1,6 @@
 const std = @import("std");
 const zorth = @import("zorth");
-const common = @import("common.zig");
+const common = @import("common");
 
 var a: std.mem.Allocator = undefined;
 
