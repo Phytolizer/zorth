@@ -11,11 +11,11 @@ fn doTest() !void {
     var w = try iter_dir.walk(a);
     defer w.deinit();
     while (try w.next()) |ent| {
-        if (ent.kind == .File and std.mem.endsWith(u8, ent.basename, ".zorth")) {
+        if (ent.kind == .File and std.mem.endsWith(u8, ent.basename, ".porth")) {
             const real_path = try iter_dir.dir.realpathAlloc(a, ent.path);
             defer a.free(real_path);
             std.log.info("Testing {s}", .{real_path});
-            const without_ext = real_path[0 .. real_path.len - ".zorth".len];
+            const without_ext = real_path[0 .. real_path.len - ".porth".len];
             const txt_path = try std.mem.concat(a, u8, &.{ without_ext, ".txt" });
             defer a.free(txt_path);
             const expected_output = try std.fs.cwd().readFileAlloc(a, txt_path, std.math.maxInt(usize));
@@ -70,7 +70,7 @@ fn doRecord() !void {
     var w = try iter_dir.walk(a);
     defer w.deinit();
     while (try w.next()) |ent| {
-        if (ent.kind == .File and std.mem.endsWith(u8, ent.basename, ".zorth")) {
+        if (ent.kind == .File and std.mem.endsWith(u8, ent.basename, ".porth")) {
             const real_path = try iter_dir.dir.realpathAlloc(a, ent.path);
             defer a.free(real_path);
             std.log.info("Recording output of {s}", .{real_path});
@@ -78,7 +78,7 @@ fn doRecord() !void {
             defer sim_output_arr.deinit();
             var sim_output = sim_output_arr.writer();
             _ = try zorth.driver(a, &.{ "zorth", "sim", real_path }, sim_output, std.io.null_writer);
-            const without_ext = real_path[0 .. real_path.len - ".zorth".len];
+            const without_ext = real_path[0 .. real_path.len - ".porth".len];
             const txt_path = try std.mem.concat(a, u8, &.{ without_ext, ".txt" });
             defer a.free(txt_path);
             std.log.info("Saving output to {s}", .{txt_path});

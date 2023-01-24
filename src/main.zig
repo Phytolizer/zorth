@@ -1548,8 +1548,8 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         }
         var basename = std.fs.path.basename(program_path);
         const extension = std.fs.path.extension(basename);
-        if (streq(extension, ".zorth")) {
-            basename = basename[0 .. basename.len - ".zorth".len];
+        if (streq(extension, ".porth")) {
+            basename = basename[0 .. basename.len - ".porth".len];
         }
         var basedir = std.fs.path.dirname(program_path) orelse ".";
         if (maybe_output_path) |output_path| {
