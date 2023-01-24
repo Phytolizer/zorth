@@ -34,7 +34,7 @@ fn doTest() !void {
             var com_output = com_output_arr.writer();
             _ = try zorth.driver(
                 a,
-                &.{ "zorth", "com", "-r", real_path },
+                &.{ "zorth", "com", "-r", "-s", real_path },
                 com_output,
                 std.io.null_writer,
             );

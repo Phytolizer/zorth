@@ -1472,6 +1472,7 @@ fn usage(writer: anytype, program_name: []const u8) !void {
         \\      OPTIONS:
         \\        -r                       Run the program after compilation
         \\        -o <file|dir>            Set the output path
+        \\        -s                       Silent; don't print compilation phase info
         \\    help                       Print this help to stdout
         \\
     , .{program_name});
@@ -1531,12 +1532,15 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         try simulateProgram(program, stdout);
     } else if (streq(subcommand, "com")) {
         var do_run = false;
+        var silent = false;
         var maybe_program_path: ?[]const u8 = null;
         var maybe_output_path: ?[]const u8 = null;
         while (args.len - i > 0) {
             const arg = common.uncons(args, &i);
             if (streq(arg, "-r")) {
                 do_run = true;
+            } else if (streq(arg, "-s")) {
+                silent = true;
             } else if (streq(arg, "-o")) {
                 if (args.len - i == 0) {
                     try usage(stderr, program_name);
@@ -1581,16 +1585,29 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
         }
         const src_path = try std.fs.path.join(a, &.{ temp_path, "output.asm" });
         defer a.free(src_path);
-        std.log.info("Generating {s}", .{src_path});
+        if (!silent)
+            std.log.info("Generating {s}", .{src_path});
         try compileProgram(program, src_path);
         const obj_path = try std.fs.path.join(a, &.{ temp_path, "output.o" });
         defer a.free(obj_path);
-        _ = try common.runCmd(a, &.{ "nasm", "-f", "elf64", "-gdwarf", src_path, "-o", obj_path }, .{});
+        _ = try common.runCmd(
+            a,
+            &.{ "nasm", "-f", "elf64", "-gdwarf", src_path, "-o", obj_path },
+            .{ .silent = silent },
+        );
         const exe_path = try std.fs.path.join(a, &.{ basedir, basename });
         defer a.free(exe_path);
-        _ = try common.runCmd(a, &.{ "ld", "-o", exe_path, obj_path }, .{});
+        _ = try common.runCmd(
+            a,
+            &.{ "ld", "-o", exe_path, obj_path },
+            .{ .silent = silent },
+        );
         if (do_run) {
-            return try common.runCmd(a, &.{exe_path}, .{ .stdout = stdout, .fail_ok = true });
+            return try common.runCmd(
+                a,
+                &.{exe_path},
+                .{ .stdout = stdout, .fail_ok = true, .silent = silent },
+            );
         }
     } else if (streq(subcommand, "help")) {
         try usage(stdout, program_name);

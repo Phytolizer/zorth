@@ -1,11 +1,13 @@
 const std = @import("std");
 
 pub fn runCmd(a: std.mem.Allocator, argv: []const []const u8, options: anytype) !u8 {
-    std.debug.print("cmd:", .{});
-    for (argv) |arg| {
-        std.debug.print(" '{s}'", .{arg});
+    if (!@hasField(@TypeOf(options), "silent") or !options.silent) {
+        std.debug.print("cmd:", .{});
+        for (argv) |arg| {
+            std.debug.print(" '{s}'", .{arg});
+        }
+        std.debug.print("\n", .{});
     }
-    std.debug.print("\n", .{});
     const result = run: {
         if (@hasField(@TypeOf(options), "stdout")) {
             const result = try std.ChildProcess.exec(.{
