@@ -1,7 +1,7 @@
 include "linux.porth"
 
 macro write
-  STDOUT SYS_write syscall3 drop
+  SYS_write syscall3
 end
 
 macro 2dup

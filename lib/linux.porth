@@ -1,6 +1,6 @@
-macro STDIN  0 end
-macro STDOUT 1 end
-macro STDERR 2 end
+macro stdin  0 end
+macro stdout 1 end
+macro stderr 2 end
 
 // Syscalls
 // Source: https://filippo.io/linux-syscall-table/
