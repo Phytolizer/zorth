@@ -1,4 +1,4 @@
-include "std.zorth"
+include "std.porth"
 
 mem 0 + 97 .
 mem 1 + 98 .

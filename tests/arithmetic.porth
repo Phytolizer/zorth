@@ -1,4 +1,4 @@
-include "std.zorth"
+include "std.porth"
 
 "Addition\n" write
 34 35 + print

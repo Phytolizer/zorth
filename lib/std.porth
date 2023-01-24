@@ -1,4 +1,4 @@
-include "linux.zorth"
+include "linux.porth"
 
 macro write
   STDOUT SYS_write syscall3 drop
