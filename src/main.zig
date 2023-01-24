@@ -1405,7 +1405,8 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
                     }
                     if (INTRINSIC_NAMES.get(value) != null) {
                         std.debug.print(
-                            "{}: error: redefinition of intrinsic word `{s}`\n",
+                            "{}: error: redefinition of intrinsic word `{s}`." ++
+                                "Please choose a different name for your macro.\n",
                             .{ token.loc, value },
                         );
                         return error.Parse;
