@@ -1,0 +1,8 @@
+include "std.porth"
+
+//comment1
+// comment 2
+//////// lots of slashes
+
+// string literal with `//` is fine
+"hello, // world\n" stdout write // allowed here as well

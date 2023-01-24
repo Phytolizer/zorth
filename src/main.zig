@@ -1046,19 +1046,12 @@ const Lexer = struct {
     lines: std.mem.SplitIterator(u8),
     line: []const u8,
 
-    fn trimComment(line: []const u8) []const u8 {
-        return if (std.mem.indexOf(u8, line, "//")) |comment_start|
-            line[0..comment_start]
-        else
-            line;
-    }
-
     pub fn init(file_path: []const u8, source: []const u8) @This() {
         var lines = std.mem.split(u8, source, &.{'\n'});
         return .{
             .file_path = file_path,
             .source = source,
-            .line = trimComment(lines.first()),
+            .line = lines.first(),
             .lines = lines,
         };
     }
@@ -1142,20 +1135,25 @@ const Lexer = struct {
                     },
                     else => {
                         const col_end = std.mem.indexOfAnyPos(u8, self.line, col, &std.ascii.whitespace) orelse self.line.len;
+                        const text = self.line[col..col_end];
+                        if (std.mem.startsWith(u8, text, "//")) {
+                            self.line = "";
+                            continue;
+                        }
                         const result = Token{
                             .loc = .{
                                 .file_path = self.file_path,
                                 .row = self.row + 1,
                                 .col = col + 1,
                             },
-                            .type = lexWord(self.line[col..col_end]),
+                            .type = lexWord(text),
                         };
                         self.col = col_end;
                         return result;
                     },
                 }
             } else if (self.lines.next()) |next_line| {
-                self.line = trimComment(next_line);
+                self.line = next_line;
                 self.col = 0;
                 self.row += 1;
             } else {
