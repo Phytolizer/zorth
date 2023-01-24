@@ -62,9 +62,7 @@ const Op = struct {
         };
     }
 
-    const Code = union(enum) {
-        PUSH_INT: i64,
-        PUSH_STR: []u8,
+    const Intrinsic = enum {
         PLUS,
         MINUS,
         MUL,
@@ -73,11 +71,6 @@ const Op = struct {
         SHL,
         BOR,
         BAND,
-        IF: usize,
-        ELSE: usize,
-        END: usize,
-        WHILE,
-        DO: usize,
         DUP,
         SWAP,
         DROP,
@@ -103,24 +96,41 @@ const Op = struct {
         const TAG_NAMES = tagNames(@This());
 
         fn tagName(self: @This()) []const u8 {
+            return TAG_NAMES[@enumToInt(self)];
+        }
+    };
+
+    const Code = union(enum) {
+        PUSH_INT: i64,
+        PUSH_STR: []u8,
+        INTRINSIC: Intrinsic,
+        IF: usize,
+        ELSE: usize,
+        END: usize,
+        WHILE,
+        DO: usize,
+
+        const TAG_NAMES = tagNames(@This());
+
+        fn tagName(self: @This()) []const u8 {
             return TAG_NAMES[@enumToInt(std.meta.activeTag(self))];
         }
     };
 
     pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try writer.writeAll(Code.tagName(self.code));
         switch (self.code) {
-            .PUSH_INT => |x| try writer.print(" {d}", .{x}),
+            .PUSH_INT => |x| try writer.print("{s} {d}", .{ self.code.tagName(), x }),
             .PUSH_STR => |x| {
                 const formatter = std.fmt.fmtSliceEscapeUpper(x);
-                try writer.print(" \"{}\"", .{formatter});
+                try writer.print("{s} \"{}\"", .{ self.code.tagName(), formatter });
             },
             .IF,
             .ELSE,
             .END,
             .DO,
-            => |x| try writer.print(" {d}", .{x}),
-            else => {},
+            => |x| try writer.print("{s} {d}", .{ self.code.tagName(), x }),
+            .INTRINSIC => |i| try writer.print("{s}", .{i.tagName()}),
+            .WHILE => try writer.writeAll(self.code.tagName()),
         }
     }
     const COUNT_OPS = @typeInfo(Op).Union.fields.len;
@@ -138,7 +148,7 @@ const Op = struct {
 const STR_CAPACITY = 640_000;
 const MEM_CAPACITY = 640_000;
 
-const BUILTIN_WORDS = std.ComptimeStringMap(Op.Code, .{
+const INTRINSIC_NAMES = std.ComptimeStringMap(Op.Intrinsic, .{
     .{ "+", .PLUS },
     .{ "-", .MINUS },
     .{ "*", .MUL },
@@ -247,61 +257,6 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 }
                 ip += 1;
             },
-            .PLUS => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(x + y);
-                ip += 1;
-            },
-            .MINUS => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(x - y);
-                ip += 1;
-            },
-            .MUL => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(x * y);
-                ip += 1;
-            },
-            .DIVMOD => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@divTrunc(x, y));
-                try stack.append(@rem(x, y));
-                ip += 1;
-            },
-            .SHR => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(if (y > std.math.maxInt(u6))
-                    0
-                else
-                    x >> @intCast(u6, y));
-                ip += 1;
-            },
-            .SHL => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(if (y > std.math.maxInt(u6))
-                    0
-                else
-                    x << @intCast(u6, y));
-                ip += 1;
-            },
-            .BOR => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(x | y);
-                ip += 1;
-            },
-            .BAND => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(x & y);
-                ip += 1;
-            },
             .IF => |dest| {
                 const x = try pop(&stack);
                 ip = if (x == 0)
@@ -325,123 +280,180 @@ fn simulateProgram(program: []Op, stdout: anytype) !void {
                 else
                     ip + 1;
             },
-            .DUP => {
-                const x = try pop(&stack);
-                try stack.appendNTimes(x, 2);
-                ip += 1;
-            },
-            .SWAP => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.appendSlice(&.{ y, x });
-                ip += 1;
-            },
-            .DROP => {
-                _ = try pop(&stack);
-                ip += 1;
-            },
-            .OVER => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.appendSlice(&.{ x, y, x });
-                ip += 1;
-            },
-            .EQ => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@boolToInt(x == y));
-                ip += 1;
-            },
-            .NE => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@boolToInt(x != y));
-                ip += 1;
-            },
-            .GT => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@boolToInt(x > y));
-                ip += 1;
-            },
-            .LT => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@boolToInt(x < y));
-                ip += 1;
-            },
-            .GE => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@boolToInt(x >= y));
-                ip += 1;
-            },
-            .LE => {
-                const y = try pop(&stack);
-                const x = try pop(&stack);
-                try stack.append(@boolToInt(x <= y));
-                ip += 1;
-            },
-            .MEM => {
-                try stack.append(STR_CAPACITY);
-                ip += 1;
-            },
-            .LOAD => {
-                const addr = try pop(&stack);
-                const byte = mem[@intCast(usize, addr)];
-                try stack.append(byte);
-                ip += 1;
-            },
-            .STORE => {
-                const value = try pop(&stack);
-                const addr = try pop(&stack);
-                mem[@intCast(usize, addr)] = @truncate(u8, @intCast(u63, value));
-                ip += 1;
-            },
-            .PRINT => {
-                const x = try pop(&stack);
-                try stdout.print("{d}\n", .{x});
-                ip += 1;
-            },
-            .SYSCALL0 => {
-                return error.UnimplementedSyscall;
-            },
-            .SYSCALL1 => {
-                return error.UnimplementedSyscall;
-            },
-            .SYSCALL2 => {
-                return error.UnimplementedSyscall;
-            },
-            .SYSCALL3 => {
-                const syscall_number = try pop(&stack);
-                const arg1 = try pop(&stack);
-                const arg2 = try pop(&stack);
-                const arg3 = try pop(&stack);
-                switch (syscall_number) {
-                    1 => {
-                        const fd = arg1;
-                        const buf = @intCast(usize, arg2);
-                        const count = @intCast(usize, arg3);
-                        const s = mem[buf .. buf + count];
-                        switch (fd) {
-                            1 => try stdout.print("{s}", .{s}),
-                            2 => std.debug.print("{s}", .{s}),
-                            else => return error.UnknownFileDesc,
-                        }
-                        try stack.append(@intCast(i64, count));
-                    },
-                    else => return error.UnimplementedSyscall,
-                }
-                ip += 1;
-            },
-            .SYSCALL4 => {
-                return error.UnimplementedSyscall;
-            },
-            .SYSCALL5 => {
-                return error.UnimplementedSyscall;
-            },
-            .SYSCALL6 => {
-                return error.UnimplementedSyscall;
+            .INTRINSIC => |i| switch (i) {
+                .PLUS => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(x + y);
+                    ip += 1;
+                },
+                .MINUS => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(x - y);
+                    ip += 1;
+                },
+                .MUL => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(x * y);
+                    ip += 1;
+                },
+                .DIVMOD => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@divTrunc(x, y));
+                    try stack.append(@rem(x, y));
+                    ip += 1;
+                },
+                .SHR => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(if (y > std.math.maxInt(u6))
+                        0
+                    else
+                        x >> @intCast(u6, y));
+                    ip += 1;
+                },
+                .SHL => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(if (y > std.math.maxInt(u6))
+                        0
+                    else
+                        x << @intCast(u6, y));
+                    ip += 1;
+                },
+                .BOR => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(x | y);
+                    ip += 1;
+                },
+                .BAND => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(x & y);
+                    ip += 1;
+                },
+                .DUP => {
+                    const x = try pop(&stack);
+                    try stack.appendNTimes(x, 2);
+                    ip += 1;
+                },
+                .SWAP => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.appendSlice(&.{ y, x });
+                    ip += 1;
+                },
+                .DROP => {
+                    _ = try pop(&stack);
+                    ip += 1;
+                },
+                .OVER => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.appendSlice(&.{ x, y, x });
+                    ip += 1;
+                },
+                .EQ => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@boolToInt(x == y));
+                    ip += 1;
+                },
+                .NE => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@boolToInt(x != y));
+                    ip += 1;
+                },
+                .GT => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@boolToInt(x > y));
+                    ip += 1;
+                },
+                .LT => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@boolToInt(x < y));
+                    ip += 1;
+                },
+                .GE => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@boolToInt(x >= y));
+                    ip += 1;
+                },
+                .LE => {
+                    const y = try pop(&stack);
+                    const x = try pop(&stack);
+                    try stack.append(@boolToInt(x <= y));
+                    ip += 1;
+                },
+                .MEM => {
+                    try stack.append(STR_CAPACITY);
+                    ip += 1;
+                },
+                .LOAD => {
+                    const addr = try pop(&stack);
+                    const byte = mem[@intCast(usize, addr)];
+                    try stack.append(byte);
+                    ip += 1;
+                },
+                .STORE => {
+                    const value = try pop(&stack);
+                    const addr = try pop(&stack);
+                    mem[@intCast(usize, addr)] = @truncate(u8, @intCast(u63, value));
+                    ip += 1;
+                },
+                .PRINT => {
+                    const x = try pop(&stack);
+                    try stdout.print("{d}\n", .{x});
+                    ip += 1;
+                },
+                .SYSCALL0 => {
+                    return error.UnimplementedSyscall;
+                },
+                .SYSCALL1 => {
+                    return error.UnimplementedSyscall;
+                },
+                .SYSCALL2 => {
+                    return error.UnimplementedSyscall;
+                },
+                .SYSCALL3 => {
+                    const syscall_number = try pop(&stack);
+                    const arg1 = try pop(&stack);
+                    const arg2 = try pop(&stack);
+                    const arg3 = try pop(&stack);
+                    switch (syscall_number) {
+                        1 => {
+                            const fd = arg1;
+                            const buf = @intCast(usize, arg2);
+                            const count = @intCast(usize, arg3);
+                            const s = mem[buf .. buf + count];
+                            switch (fd) {
+                                1 => try stdout.print("{s}", .{s}),
+                                2 => std.debug.print("{s}", .{s}),
+                                else => return error.UnknownFileDesc,
+                            }
+                            try stack.append(@intCast(i64, count));
+                        },
+                        else => return error.UnimplementedSyscall,
+                    }
+                    ip += 1;
+                },
+                .SYSCALL4 => {
+                    return error.UnimplementedSyscall;
+                },
+                .SYSCALL5 => {
+                    return error.UnimplementedSyscall;
+                },
+                .SYSCALL6 => {
+                    return error.UnimplementedSyscall;
+                },
             },
         }
     }
@@ -493,64 +505,6 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 , .{ s.len, strs.items.len });
                 try strs.append(s);
             },
-            .PLUS => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    add rax, rbx
-                \\    push rax
-                \\
-            ),
-            .MINUS => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    sub rax, rbx
-                \\    push rax
-                \\
-            ),
-            .MUL => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    mul rbx
-                \\    push rax
-                \\
-            ),
-            .DIVMOD => try w.writeAll(
-                \\    xor rdx, rdx
-                \\    pop rbx
-                \\    pop rax
-                \\    div rbx
-                \\    push rax
-                \\    push rdx
-                \\
-            ),
-            .SHR => try w.writeAll(
-                \\    pop rcx
-                \\    pop rbx
-                \\    shr rbx, cl
-                \\    push rbx
-                \\
-            ),
-            .SHL => try w.writeAll(
-                \\    pop rcx
-                \\    pop rbx
-                \\    shl rbx, cl
-                \\    push rbx
-                \\
-            ),
-            .BOR => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    or rax, rbx
-                \\    push rax
-                \\
-            ),
-            .BAND => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    and rax, rbx
-                \\    push rax
-                \\
-            ),
             .IF => |dest| try w.print(
                 \\    pop rax
                 \\    test rax, rax
@@ -574,176 +528,236 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
                 \\    jz .zorth_addr_{d}
                 \\
             , .{dest}),
-            .DUP => try w.writeAll(
-                \\    pop rax
-                \\    push rax
-                \\    push rax
-                \\
-            ),
-            .SWAP => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    push rbx
-                \\    push rax
-                \\
-            ),
-            .DROP => try w.writeAll(
-                \\    pop rax
-                \\
-            ),
-            .OVER => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    push rax
-                \\    push rbx
-                \\    push rax
-                \\
-            ),
-            .EQ => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
-                \\    pop rbx
-                \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmove rcx, rdx
-                \\    push rcx
-                \\
-            ),
-            .NE => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
-                \\    pop rbx
-                \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmovne rcx, rdx
-                \\    push rcx
-                \\
-            ),
-            .GT => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
-                \\    pop rbx
-                \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmovg rcx, rdx
-                \\    push rcx
-                \\
-            ),
-            .LT => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
-                \\    pop rbx
-                \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmovl rcx, rdx
-                \\    push rcx
-                \\
-            ),
-            .GE => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
-                \\    pop rbx
-                \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmovge rcx, rdx
-                \\    push rcx
-                \\
-            ),
-            .LE => try w.writeAll(
-                \\    mov rcx, 0
-                \\    mov rdx, 1
-                \\    pop rbx
-                \\    pop rax
-                \\    cmp rax, rbx
-                \\    cmovle rcx, rdx
-                \\    push rcx
-                \\
-            ),
-            .MEM => try w.writeAll(
-                \\    push mem
-                \\
-            ),
-            .LOAD => try w.writeAll(
-                \\    pop rax
-                \\    xor rbx, rbx
-                \\    mov bl, [rax]
-                \\    push rbx
-                \\
-            ),
-            .STORE => try w.writeAll(
-                \\    pop rbx
-                \\    pop rax
-                \\    mov [rax], bl
-                \\
-            ),
-            .PRINT => try w.writeAll(
-                \\    pop rdi
-                \\    call dump
-                \\
-            ),
-            .SYSCALL0 => try w.writeAll(
-                \\    pop rax
-                \\    syscall
-                \\    push rax
-                \\
-            ),
-            .SYSCALL1 => try w.writeAll(
-                \\    pop rax
-                \\    pop rdi
-                \\    syscall
-                \\    push rax
-                \\
-            ),
-            .SYSCALL2 => try w.writeAll(
-                \\    pop rax
-                \\    pop rdi
-                \\    pop rsi
-                \\    syscall
-                \\    push rax
-                \\
-            ),
-            .SYSCALL3 => try w.writeAll(
-                \\    pop rax
-                \\    pop rdi
-                \\    pop rsi
-                \\    pop rdx
-                \\    syscall
-                \\    push rax
-                \\
-            ),
-            .SYSCALL4 => try w.writeAll(
-                \\    pop rax
-                \\    pop rdi
-                \\    pop rsi
-                \\    pop rdx
-                \\    pop r10
-                \\    syscall
-                \\    push rax
-                \\
-            ),
-            .SYSCALL5 => try w.writeAll(
-                \\    pop rax
-                \\    pop rdi
-                \\    pop rsi
-                \\    pop rdx
-                \\    pop r10
-                \\    pop r8
-                \\    syscall
-                \\    push rax
-                \\
-            ),
-            .SYSCALL6 => try w.writeAll(
-                \\    pop rax
-                \\    pop rdi
-                \\    pop rsi
-                \\    pop rdx
-                \\    pop r10
-                \\    pop r8
-                \\    pop r9
-                \\    syscall
-                \\    push rax
-                \\
-            ),
+            .INTRINSIC => |i| switch (i) {
+                .PLUS => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    add rax, rbx
+                    \\    push rax
+                    \\
+                ),
+                .MINUS => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    sub rax, rbx
+                    \\    push rax
+                    \\
+                ),
+                .MUL => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    mul rbx
+                    \\    push rax
+                    \\
+                ),
+                .DIVMOD => try w.writeAll(
+                    \\    xor rdx, rdx
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    div rbx
+                    \\    push rax
+                    \\    push rdx
+                    \\
+                ),
+                .SHR => try w.writeAll(
+                    \\    pop rcx
+                    \\    pop rbx
+                    \\    shr rbx, cl
+                    \\    push rbx
+                    \\
+                ),
+                .SHL => try w.writeAll(
+                    \\    pop rcx
+                    \\    pop rbx
+                    \\    shl rbx, cl
+                    \\    push rbx
+                    \\
+                ),
+                .BOR => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    or rax, rbx
+                    \\    push rax
+                    \\
+                ),
+                .BAND => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    and rax, rbx
+                    \\    push rax
+                    \\
+                ),
+                .DUP => try w.writeAll(
+                    \\    pop rax
+                    \\    push rax
+                    \\    push rax
+                    \\
+                ),
+                .SWAP => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    push rbx
+                    \\    push rax
+                    \\
+                ),
+                .DROP => try w.writeAll(
+                    \\    pop rax
+                    \\
+                ),
+                .OVER => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    push rax
+                    \\    push rbx
+                    \\    push rax
+                    \\
+                ),
+                .EQ => try w.writeAll(
+                    \\    mov rcx, 0
+                    \\    mov rdx, 1
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    cmp rax, rbx
+                    \\    cmove rcx, rdx
+                    \\    push rcx
+                    \\
+                ),
+                .NE => try w.writeAll(
+                    \\    mov rcx, 0
+                    \\    mov rdx, 1
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    cmp rax, rbx
+                    \\    cmovne rcx, rdx
+                    \\    push rcx
+                    \\
+                ),
+                .GT => try w.writeAll(
+                    \\    mov rcx, 0
+                    \\    mov rdx, 1
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    cmp rax, rbx
+                    \\    cmovg rcx, rdx
+                    \\    push rcx
+                    \\
+                ),
+                .LT => try w.writeAll(
+                    \\    mov rcx, 0
+                    \\    mov rdx, 1
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    cmp rax, rbx
+                    \\    cmovl rcx, rdx
+                    \\    push rcx
+                    \\
+                ),
+                .GE => try w.writeAll(
+                    \\    mov rcx, 0
+                    \\    mov rdx, 1
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    cmp rax, rbx
+                    \\    cmovge rcx, rdx
+                    \\    push rcx
+                    \\
+                ),
+                .LE => try w.writeAll(
+                    \\    mov rcx, 0
+                    \\    mov rdx, 1
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    cmp rax, rbx
+                    \\    cmovle rcx, rdx
+                    \\    push rcx
+                    \\
+                ),
+                .MEM => try w.writeAll(
+                    \\    push mem
+                    \\
+                ),
+                .LOAD => try w.writeAll(
+                    \\    pop rax
+                    \\    xor rbx, rbx
+                    \\    mov bl, [rax]
+                    \\    push rbx
+                    \\
+                ),
+                .STORE => try w.writeAll(
+                    \\    pop rbx
+                    \\    pop rax
+                    \\    mov [rax], bl
+                    \\
+                ),
+                .PRINT => try w.writeAll(
+                    \\    pop rdi
+                    \\    call dump
+                    \\
+                ),
+                .SYSCALL0 => try w.writeAll(
+                    \\    pop rax
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+                .SYSCALL1 => try w.writeAll(
+                    \\    pop rax
+                    \\    pop rdi
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+                .SYSCALL2 => try w.writeAll(
+                    \\    pop rax
+                    \\    pop rdi
+                    \\    pop rsi
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+                .SYSCALL3 => try w.writeAll(
+                    \\    pop rax
+                    \\    pop rdi
+                    \\    pop rsi
+                    \\    pop rdx
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+                .SYSCALL4 => try w.writeAll(
+                    \\    pop rax
+                    \\    pop rdi
+                    \\    pop rsi
+                    \\    pop rdx
+                    \\    pop r10
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+                .SYSCALL5 => try w.writeAll(
+                    \\    pop rax
+                    \\    pop rdi
+                    \\    pop rsi
+                    \\    pop rdx
+                    \\    pop r10
+                    \\    pop r8
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+                .SYSCALL6 => try w.writeAll(
+                    \\    pop rax
+                    \\    pop rdi
+                    \\    pop rsi
+                    \\    pop rdx
+                    \\    pop r10
+                    \\    pop r8
+                    \\    pop r9
+                    \\    syscall
+                    \\    push rax
+                    \\
+                ),
+            },
         }
     }
     try w.print(
@@ -1197,8 +1211,8 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
             std.debug.print("{}: ip {d}, {}\n", .{ token.loc, ip, token });
 
         switch (token.type) {
-            .word => |value| if (BUILTIN_WORDS.get(value)) |code| {
-                try program.append(Op.init(code, token));
+            .word => |value| if (INTRINSIC_NAMES.get(value)) |code| {
+                try program.append(Op.init(.{ .INTRINSIC = code }, token));
                 ip += 1;
             } else if (macros.get(value)) |macro| {
                 if (DEBUGGING.load_program_from_file)
@@ -1389,9 +1403,9 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
                         );
                         return error.Parse;
                     }
-                    if (BUILTIN_WORDS.get(value) != null) {
+                    if (INTRINSIC_NAMES.get(value) != null) {
                         std.debug.print(
-                            "{}: error: redefinition of built-in word `{s}`\n",
+                            "{}: error: redefinition of intrinsic word `{s}`\n",
                             .{ token.loc, value },
                         );
                         return error.Parse;
