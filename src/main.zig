@@ -40,7 +40,7 @@ fn tagNames(comptime T: type) []const []const u8 {
     var result: []const []const u8 = &[_][]const u8{};
     inline for (std.meta.fieldNames(T)) |fld| {
         var lower_field: [fld.len]u8 = undefined;
-        for (fld) |c, i| {
+        for (fld, 0..) |c, i| {
             lower_field[i] = std.ascii.toLower(c);
             if (lower_field[i] == '_') {
                 lower_field[i] = ' ';
@@ -484,7 +484,7 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         \\_start:
         \\
     );
-    for (program) |op, ip| {
+    for (program, 0..) |op, ip| {
         try w.print(
             \\    ;; -- {} --
             \\.zorth_addr_{d}:
@@ -772,9 +772,9 @@ fn compileProgram(program: []const Op, out_path: []const u8) !void {
         \\    section .data
         \\
     , .{ program.len, MEM_CAPACITY });
-    for (strs.items) |s, i| {
+    for (strs.items, 0..) |s, i| {
         try w.print("zorth_str_{d}: db ", .{i});
-        for (s) |b, j| {
+        for (s, 0..) |b, j| {
             try w.print("{s}{d}", .{ if (j > 0) "," else "", b });
         }
         try w.writeAll("\n");
@@ -1193,7 +1193,7 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
     defer stack.deinit();
     errdefer |e| if (e == error.Parse and DEBUGGING.load_program_from_file) {
         std.debug.print("INSTRUCTIONS SO FAR:\n", .{});
-        for (program.items) |op, i| {
+        for (program.items, 0..) |op, i| {
             std.debug.print("{}: @{d}: {}\n", .{ op.token.loc, i, op });
         }
         std.debug.print("BLOCK STACK:\n", .{});
@@ -1452,7 +1452,7 @@ fn loadProgramFromFile(path: []const u8, include_paths: []const []const u8) ![]O
     const result = try program.toOwnedSlice();
     if (DEBUGGING.load_program_from_file) {
         std.debug.print("INSTRUCTIONS:\n", .{});
-        for (result) |op, i| {
+        for (result, 0..) |op, i| {
             std.debug.print("{}: @{d}: {}\n", .{ op.token.loc, i, op });
         }
     }
