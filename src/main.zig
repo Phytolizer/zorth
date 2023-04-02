@@ -1490,7 +1490,7 @@ pub fn driver(a: std.mem.Allocator, args: []const []const u8, stdout: anytype, s
     defer temp_dir.close();
 
     const program_name = common.uncons(args, &i);
-    if (args.len < 1) {
+    if (args.len - i < 1) {
         try usage(stderr, program_name);
         std.log.err("no subcommand provided", .{});
         return error.Usage;
