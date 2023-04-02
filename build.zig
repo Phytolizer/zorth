@@ -33,7 +33,11 @@ pub fn build(b: *std.Build) void {
     }
     exe.install();
 
-    const run_cmd = exe.run();
+    const run_cmd = b.addRunArtifact(exe);
+    run_cmd.stdio = .{
+        .check = std.ArrayList(std.Build.RunStep.StdIo.Check).init(b.allocator),
+    };
+    run_cmd.has_side_effects = true;
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
@@ -58,12 +62,15 @@ pub fn build(b: *std.Build) void {
     tests.addModule(common_mod.name, common_mod.module);
     tests.install();
 
-    const tests_run_cmd = tests.run();
+    const tests_run_cmd = b.addRunArtifact(tests);
+    tests_run_cmd.has_side_effects = true;
+    tests_run_cmd.stdio = .{
+        .check = std.ArrayList(std.Build.RunStep.StdIo.Check).init(b.allocator),
+    };
     tests_run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         tests_run_cmd.addArgs(args);
     }
-    tests_run_cmd.expected_term = null;
 
     const tests_run_step = b.step("test", "Test the app");
     tests_run_step.dependOn(&tests_run_cmd.step);
