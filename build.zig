@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
     for (pkgs) |pkg| {
         exe.addModule(pkg.name, pkg.module);
     }
-    exe.install();
+    b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.stdio = .{
@@ -60,7 +60,6 @@ pub fn build(b: *std.Build) void {
         }),
     );
     tests.addModule(common_mod.name, common_mod.module);
-    tests.install();
 
     const tests_run_cmd = b.addRunArtifact(tests);
     tests_run_cmd.has_side_effects = true;
