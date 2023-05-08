@@ -92,9 +92,10 @@ fn record(gpa: std.mem.Allocator, path: []const u8) TestError!void {
 
 fn walkTests(
     gpa: std.mem.Allocator,
+    folder: []const u8,
     comptime f: fn (std.mem.Allocator, []const u8) TestError!void,
 ) !void {
-    const dir = std.fs.cwd().openIterableDir("tests", .{}) catch |e| {
+    const dir = std.fs.cwd().openIterableDir(folder, .{}) catch |e| {
         std.debug.print("failed to open 'tests': {s}\n", .{@errorName(e)});
         return e;
     };
@@ -109,7 +110,7 @@ fn walkTests(
         if (ent.kind == .File and
             std.mem.eql(u8, path.extension(ent.basename), ".porth"))
         {
-            const full_path = try path.join(gpa, &.{ "tests", ent.path });
+            const full_path = try path.join(gpa, &.{ folder, ent.path });
             defer gpa.free(full_path);
             f(gpa, full_path) catch |e| switch (e) {
                 error.SimFail => sim_failed += 1,
@@ -131,7 +132,9 @@ fn walkTests(
 
 fn usage(writer: anytype, exe_name: []const u8) !void {
     try writer.print(
-        \\Usage: {s} [SUBCOMMAND]
+        \\Usage: {s} [OPTIONS] [SUBCOMMAND]
+        \\OPTIONS:
+        \\  -f <folder>     Set the folder with tests. (Default ./tests)
         \\SUBCOMMANDS:
         \\  test            Run tests. (Default)
         \\  record          Update the expected output.
@@ -152,19 +155,35 @@ fn run() !void {
 
     const exe_name = shift(&argp).?;
 
-    if (shift(&argp)) |subcmd| {
-        if (std.mem.eql(u8, subcmd, "record"))
-            try walkTests(gpa, record)
-        else if (std.mem.eql(u8, subcmd, "test"))
-            try walkTests(gpa, runTest)
-        else if (std.mem.eql(u8, subcmd, "help"))
-            try usage(std.io.getStdOut().writer(), exe_name)
-        else {
-            usage(std.io.getStdErr().writer(), exe_name) catch unreachable;
-            std.debug.print("[ERROR] unknown subcommand {s}\n", .{subcmd});
-            return error.Usage;
+    var folder: []const u8 = "tests";
+    var subcmd: []const u8 = "test";
+
+    const stderr = std.io.getStdErr().writer();
+
+    while (shift(&argp)) |arg| {
+        if (std.mem.eql(u8, arg, "-f")) {
+            folder = shift(&argp) orelse {
+                usage(stderr, exe_name) catch unreachable;
+                std.debug.print("[ERROR] no argument for -f\n", .{});
+                return error.Usage;
+            };
+        } else {
+            subcmd = arg;
+            break;
         }
-    } else try walkTests(gpa, runTest);
+    }
+
+    if (std.mem.eql(u8, subcmd, "record"))
+        try walkTests(gpa, folder, record)
+    else if (std.mem.eql(u8, subcmd, "test"))
+        try walkTests(gpa, folder, runTest)
+    else if (std.mem.eql(u8, subcmd, "help"))
+        try usage(std.io.getStdOut().writer(), exe_name)
+    else {
+        usage(stderr, exe_name) catch unreachable;
+        std.debug.print("[ERROR] unknown subcommand {s}\n", .{subcmd});
+        return error.Usage;
+    }
 }
 
 pub fn main() void {
