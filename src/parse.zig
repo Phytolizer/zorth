@@ -133,7 +133,10 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
 }
 
 pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) ![]Op {
-    const f = try std.fs.cwd().openFile(file_path, .{});
+    const f = std.fs.cwd().openFile(file_path, .{}) catch |e| {
+        std.debug.print("ERROR: Failed to open '{s}'!\n", .{file_path});
+        return e;
+    };
     defer f.close();
 
     const program = try parse(gpa, f.reader(), file_path);

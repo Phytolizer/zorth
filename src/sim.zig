@@ -11,12 +11,12 @@ fn binaryOp(
     stack.appendAssumeCapacity(op(i64, a, b));
 }
 
-pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
+pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: anytype) !void {
     var stack = std.ArrayList(i64).init(gpa);
     defer stack.deinit();
-    var stderr_buf = std.io.bufferedWriter(std.io.getStdErr().writer());
-    defer stderr_buf.flush() catch unreachable;
-    const stderr = stderr_buf.writer();
+    var stdout_buf = std.io.bufferedWriter(raw_stdout);
+    defer stdout_buf.flush() catch {};
+    const stdout = stdout_buf.writer();
 
     var ip: usize = 0;
     while (ip < program.len) {
@@ -44,7 +44,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
             },
             .dump => {
                 const x = stack.pop();
-                stderr.print("{d}\n", .{x}) catch unreachable;
+                try stdout.print("{d}\n", .{x});
                 ip += 1;
             },
             .@"if", .do => |maybe_targ| {
