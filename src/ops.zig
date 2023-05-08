@@ -5,6 +5,7 @@ pub const Op = union(enum) {
     minus,
     equal,
     @"if": ?usize,
+    @"else": ?usize,
     end,
     dump,
 
@@ -14,7 +15,7 @@ pub const Op = union(enum) {
     pub fn display(self: Self, out: anytype) !void {
         switch (self) {
             .push => |x| try out.print("push {d}", .{x}),
-            .@"if" => |maybe_targ| {
+            .@"if", .@"else" => |maybe_targ| {
                 const name = @tagName(self);
                 try out.writeAll(name);
                 if (maybe_targ) |targ| {

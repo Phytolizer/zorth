@@ -61,6 +61,10 @@ pub fn compileProgram(
                 try emit(&out, "test rax, rax");
                 try emitf(&out, "jz " ++ porth_addr_prefix ++ "{d}", .{targ});
             },
+            .@"else" => |maybe_targ| {
+                const targ = maybe_targ.?;
+                try emitf(&out, "jmp " ++ porth_addr_prefix ++ "{d}", .{targ});
+            },
             .end => {},
             .dump => {
                 try emit(&out, "pop rdi");

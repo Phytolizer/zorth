@@ -46,6 +46,10 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
                     else => ip += 1,
                 }
             },
+            .@"else" => |maybe_targ| {
+                const targ = maybe_targ.?;
+                ip = targ;
+            },
             .end => {
                 ip += 1;
             },

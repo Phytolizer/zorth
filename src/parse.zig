@@ -25,6 +25,8 @@ fn parseTokenAsOp(token: Token) ParseError!Op {
         .dump
     else if (streq(token.word, "if"))
         .{ .@"if" = null }
+    else if (streq(token.word, "else"))
+        .{ .@"else" = null }
     else if (streq(token.word, "end"))
         .end
     else blk: {
@@ -79,10 +81,23 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .@"if" => {
                 try stack.append(ip);
             },
-            .end => {
+            .@"else" => {
                 const if_ip = stack.pop();
                 switch (program[if_ip]) {
                     .@"if" => |*targ| {
+                        targ.* = ip + 1;
+                    },
+                    else => {
+                        std.debug.print("`else` can only be used in `if`-blocks\n", .{});
+                        return error.Sema;
+                    },
+                }
+                try stack.append(ip);
+            },
+            .end => {
+                const if_ip = stack.pop();
+                switch (program[if_ip]) {
+                    .@"if", .@"else" => |*targ| {
                         targ.* = ip;
                     },
                     else => {
