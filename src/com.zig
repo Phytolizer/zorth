@@ -18,7 +18,9 @@ pub fn compileProgram(
     var outf = try std.fs.cwd().createFile(out_file_path, .{});
     defer outf.close();
 
-    const out = outf.writer();
+    var out_buf = std.io.bufferedWriter(outf.writer());
+    defer out_buf.flush() catch {};
+    const out = out_buf.writer();
 
     try out.writeAll(dump_asm);
     try out.writeAll("global _start\n");
