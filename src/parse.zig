@@ -87,7 +87,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
                         targ.* = ip + 1;
                     },
                     else => {
-                        std.debug.print("`else` can only be used in `if`-blocks\n", .{});
+                        std.debug.print("{}: ERROR: `else` can only be used in `if`-blocks\n", .{op.loc});
                         return error.Sema;
                     },
                 }
@@ -110,7 +110,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
                         targ.* = ip + 1;
                     },
                     else => {
-                        std.debug.print("`end` can only close `if`-blocks\n", .{});
+                        std.debug.print("{}: ERROR: `end` can only close `if`-blocks\n", .{op.loc});
                         return error.Sema;
                     },
                 }
@@ -125,6 +125,11 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             => {},
         }
     }
+
+    if (stack.items.len > 0) {
+        std.debug.print("{}: ERROR: unclosed block\n", .{program[stack.pop()].loc});
+        return error.Sema;
+    }
 }
 
 pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) ![]Op {
@@ -132,6 +137,7 @@ pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) ![]Op 
     defer f.close();
 
     const program = try parse(gpa, f.reader(), file_path);
+    errdefer gpa.free(program);
     try crossReferenceBlocks(gpa, program);
     return program;
 }

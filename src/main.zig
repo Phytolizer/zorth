@@ -28,7 +28,7 @@ fn shift(args: *[]const []const u8) ?[]const u8 {
 }
 
 fn run() !void {
-    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 10 }){};
     defer std.debug.assert(gpa_state.deinit() == .ok);
     const gpa = gpa_state.allocator();
 
