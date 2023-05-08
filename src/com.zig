@@ -55,6 +55,15 @@ pub fn compileProgram(
                 try emit(&out, "cmove rcx, rdx");
                 try emit(&out, "push rcx");
             },
+            .gt => {
+                try emit(&out, "mov rcx, 0");
+                try emit(&out, "mov rdx, 1");
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rbx");
+                try emit(&out, "cmp rax, rbx");
+                try emit(&out, "cmovg rcx, rdx");
+                try emit(&out, "push rcx");
+            },
             .dump => {
                 try emit(&out, "pop rdi");
                 try emit(&out, "call dump");

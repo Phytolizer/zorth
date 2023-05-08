@@ -5,6 +5,7 @@ pub const Op = union(enum) {
     plus,
     minus,
     equal,
+    gt,
 
     // I/O.
     dump,

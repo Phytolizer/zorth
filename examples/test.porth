@@ -6,4 +6,4 @@
 else
   420 .
 end
-12 dup . .
+12 dup > .
