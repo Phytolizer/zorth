@@ -126,7 +126,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                         }
                         try stack.append(arg3);
                     },
-                    else => std.debug.panic("unknwon syscall number {d}", .{syscall_number}),
+                    else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
                 }
                 ip += 1;
             },
