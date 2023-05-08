@@ -168,6 +168,9 @@ pub fn compileProgram(
                 try emit(&out, "push rbx");
                 try emit(&out, "push rax");
             },
+            .drop => {
+                try emit(&out, "pop rax");
+            },
         }
     }
     try out.print(porth_addr_prefix ++ "{d}:\n", .{program.len});

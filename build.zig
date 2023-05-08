@@ -49,6 +49,8 @@ pub fn build(b: *std.Build) void {
     });
     test_exe.addModule("porth-driver", porth_driver);
     test_exe.addModule("porth-cmd", cmd);
+    // update regular exe with tests to ensure i don't get them out of sync
+    test_exe.step.dependOn(b.getInstallStep());
 
     const test_run_cmd = b.addRunArtifact(test_exe);
     if (b.args) |args| {

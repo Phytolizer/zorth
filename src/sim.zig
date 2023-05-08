@@ -128,6 +128,10 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 try stack.appendSlice(&.{ b, a });
                 ip += 1;
             },
+            .drop => {
+                _ = stack.pop();
+                ip += 1;
+            },
         }
     }
 }

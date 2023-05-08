@@ -36,6 +36,7 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "dup", .dup },
     .{ "2dup", .dup2 },
     .{ "swap", .swap },
+    .{ "drop", .drop },
 });
 
 fn parseTokenAsOp(token: Token) ParseError!Op {
@@ -146,6 +147,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .dup,
             .dup2,
             .swap,
+            .drop,
             => {},
         }
     }
