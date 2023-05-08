@@ -1,7 +1,7 @@
 const std = @import("std");
 const Op = @import("ops.zig").Op;
-const simulateProgram = @import("sim.zig").simulateProgram;
-const compileProgram = @import("com.zig").compileProgram;
+const sim = @import("sim.zig");
+const com = @import("com.zig");
 const cmd = @import("cmd.zig");
 const parse = @import("parse.zig");
 
@@ -48,7 +48,7 @@ fn run() !void {
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
         defer gpa.free(program);
-        try simulateProgram(gpa, program);
+        try sim.simulateProgram(gpa, program);
     } else if (std.mem.eql(u8, subcommand, "com")) {
         const file_path = shift(&argp) orelse {
             usage(program_name);
@@ -57,7 +57,7 @@ fn run() !void {
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
         defer gpa.free(program);
-        try compileProgram(program, "output.asm");
+        try com.compileProgram(program, "output.asm");
         try cmd.callCmd(gpa, &.{ "nasm", "-felf64", "output.asm" });
         try cmd.callCmd(gpa, &.{ "ld", "-o", "output", "output.o" });
     } else {
