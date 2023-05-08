@@ -1,5 +1,5 @@
 segment .text
-dump:
+print:
     mov     r9, -3689348814741910323
     sub     rsp, 40
     mov     BYTE [rsp+31], 10

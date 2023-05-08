@@ -1,4 +1,4 @@
 100 0 while 2dup > do
-  dup dump
+  dup print
   1 +
 end

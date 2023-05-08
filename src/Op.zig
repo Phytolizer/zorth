@@ -37,7 +37,7 @@ pub const Code = union(enum) {
     band,
 
     // I/O.
-    dump,
+    print,
 
     // Memory access.
     mem,

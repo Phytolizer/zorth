@@ -1,7 +1,7 @@
 const std = @import("std");
 const Op = @import("Op.zig");
 
-const dump_asm = @embedFile("dump.asm");
+const dump_asm = @embedFile("print.asm");
 
 fn emit(out: anytype, comptime text: []const u8) !void {
     try emitf(out, text, .{});
@@ -128,9 +128,9 @@ pub fn compileProgram(
                 try emit(&out, "and rax, rbx");
                 try emit(&out, "push rax");
             },
-            .dump => {
+            .print => {
                 try emit(&out, "pop rdi");
-                try emit(&out, "call dump");
+                try emit(&out, "call print");
             },
             .mem => {
                 try emit(&out, "push mem");

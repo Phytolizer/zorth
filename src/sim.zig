@@ -81,7 +81,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 binaryOp(&stack, math.band);
                 ip += 1;
             },
-            .dump => {
+            .print => {
                 const x = stack.pop();
                 try stdout.print("{d}\n", .{x});
                 ip += 1;
