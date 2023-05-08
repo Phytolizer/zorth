@@ -15,7 +15,7 @@ const Token = struct {
 const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .plus },
     .{ "-", .minus },
-    .{ ".", .dump },
+    .{ "dump", .dump },
     .{ "mem", .mem },
     .{ "=", .equal },
     .{ ">", .gt },
