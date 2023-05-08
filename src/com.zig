@@ -33,7 +33,10 @@ pub fn compileProgram(
         try op.code.display(out);
         try out.writeAll(" --\n");
         switch (op.code) {
-            .push => |x| try emitf(&out, "push {d}", .{x}),
+            .push => |x| {
+                try emitf(&out, "mov rax, {d}", .{x});
+                try emit(&out, "push rax");
+            },
             .plus => {
                 try emit(&out, "pop rbx");
                 try emit(&out, "pop rax");
