@@ -6,7 +6,7 @@ pub fn sub(comptime T: type, x: T, y: T) T {
     return x -% y;
 }
 
-pub fn equal(comptime T: type, x: T, y: T) T {
+pub fn eq(comptime T: type, x: T, y: T) T {
     return @boolToInt(x == y);
 }
 
@@ -16,6 +16,18 @@ pub fn gt(comptime T: type, x: T, y: T) T {
 
 pub fn lt(comptime T: type, x: T, y: T) T {
     return @boolToInt(x < y);
+}
+
+pub fn ge(comptime T: type, x: T, y: T) T {
+    return @boolToInt(x >= y);
+}
+
+pub fn le(comptime T: type, x: T, y: T) T {
+    return @boolToInt(x <= y);
+}
+
+pub fn ne(comptime T: type, x: T, y: T) T {
+    return @boolToInt(x != y);
 }
 
 pub fn shr(comptime T: type, x: T, y: T) T {

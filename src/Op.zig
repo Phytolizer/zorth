@@ -23,9 +23,12 @@ pub const Code = union(enum) {
     plus,
     minus,
     mod,
-    equal,
+    eq,
     gt,
     lt,
+    ge,
+    le,
+    ne,
 
     // Bitwise.
     shr,

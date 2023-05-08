@@ -53,7 +53,7 @@ pub fn compileProgram(
                 try emit(&out, "div rbx");
                 try emit(&out, "push rdx");
             },
-            .equal => {
+            .eq => {
                 try emit(&out, "pop rbx");
                 try emit(&out, "pop rax");
                 try emit(&out, "cmp rax, rbx");
@@ -75,6 +75,30 @@ pub fn compileProgram(
                 try emit(&out, "cmp rax, rbx");
                 try emit(&out, "movzx rax, al");
                 try emit(&out, "setl al");
+                try emit(&out, "push rax");
+            },
+            .ge => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "cmp rax, rbx");
+                try emit(&out, "movzx rax, al");
+                try emit(&out, "setge al");
+                try emit(&out, "push rax");
+            },
+            .le => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "cmp rax, rbx");
+                try emit(&out, "movzx rax, al");
+                try emit(&out, "setle al");
+                try emit(&out, "push rax");
+            },
+            .ne => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "cmp rax, rbx");
+                try emit(&out, "movzx rax, al");
+                try emit(&out, "setne al");
                 try emit(&out, "push rax");
             },
             .shr => {
