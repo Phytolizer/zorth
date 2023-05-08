@@ -33,3 +33,7 @@ pub fn bor(comptime T: type, x: T, y: T) T {
 pub fn band(comptime T: type, x: T, y: T) T {
     return x & y;
 }
+
+pub fn mod(comptime T: type, x: T, y: T) T {
+    return @mod(x, y);
+}

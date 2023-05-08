@@ -22,6 +22,7 @@ pub const Code = union(enum) {
     // Simple.
     plus,
     minus,
+    mod,
     equal,
     gt,
     lt,

@@ -37,6 +37,10 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 binaryOp(&stack, math.sub);
                 ip += 1;
             },
+            .mod => {
+                binaryOp(&stack, math.mod);
+                ip += 1;
+            },
             .equal => {
                 binaryOp(&stack, math.equal);
                 ip += 1;

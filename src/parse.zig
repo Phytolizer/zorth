@@ -15,6 +15,7 @@ const Token = struct {
 const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .plus },
     .{ "-", .minus },
+    .{ "mod", .mod },
     .{ "shr", .shr },
     .{ "shl", .shl },
     .{ "bor", .bor },
@@ -136,6 +137,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .push,
             .plus,
             .minus,
+            .mod,
             .equal,
             .gt,
             .lt,

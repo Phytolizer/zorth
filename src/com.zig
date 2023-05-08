@@ -46,6 +46,13 @@ pub fn compileProgram(
                 try emit(&out, "sub rax, rbx");
                 try emit(&out, "push rax");
             },
+            .mod => {
+                try emit(&out, "xor rdx, rdx");
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "div rbx");
+                try emit(&out, "push rdx");
+            },
             .equal => {
                 try emit(&out, "pop rbx");
                 try emit(&out, "pop rax");
