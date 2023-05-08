@@ -47,38 +47,41 @@ pub fn compileProgram(
                 try emit(&out, "push rax");
             },
             .equal => {
-                try emit(&out, "mov rcx, 0");
-                try emit(&out, "mov rdx, 1");
-                try emit(&out, "pop rax");
                 try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
                 try emit(&out, "cmp rax, rbx");
-                try emit(&out, "cmove rcx, rdx");
-                try emit(&out, "push rcx");
+                try emit(&out, "sete al");
+                try emit(&out, "movzx rax, al");
+                try emit(&out, "push rax");
             },
             .gt => {
-                try emit(&out, "mov rcx, 0");
-                try emit(&out, "mov rdx, 1");
-                try emit(&out, "pop rax");
                 try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
                 try emit(&out, "cmp rax, rbx");
-                try emit(&out, "cmovg rcx, rdx");
-                try emit(&out, "push rcx");
+                try emit(&out, "movzx rax, al");
+                try emit(&out, "setg al");
+                try emit(&out, "push rax");
             },
             .dump => {
                 try emit(&out, "pop rdi");
                 try emit(&out, "call dump");
             },
-            .@"if" => |maybe_targ| {
+            .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 try emit(&out, "pop rax");
                 try emit(&out, "test rax, rax");
                 try emitf(&out, "jz " ++ porth_addr_prefix ++ "{d}", .{targ});
             },
+            .@"while" => {},
             .@"else" => |maybe_targ| {
                 const targ = maybe_targ.?;
                 try emitf(&out, "jmp " ++ porth_addr_prefix ++ "{d}", .{targ});
             },
-            .end => {},
+            .end => |maybe_targ| {
+                const targ = maybe_targ.?;
+                if (targ != ip + 1)
+                    try emitf(&out, "jmp " ++ porth_addr_prefix ++ "{d}", .{targ});
+            },
             .dup => {
                 try emit(&out, "pop rax");
                 try emit(&out, "push rax");

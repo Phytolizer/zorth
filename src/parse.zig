@@ -22,7 +22,9 @@ const word_map = std.ComptimeStringMap(Op, .{
     .{ ">", .gt },
     .{ "if", .{ .@"if" = null } },
     .{ "else", .{ .@"else" = null } },
-    .{ "end", .end },
+    .{ "while", .@"while" },
+    .{ "do", .{ .do = null } },
+    .{ "end", .{ .end = null } },
     .{ "dup", .dup },
 });
 
@@ -76,7 +78,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
 
     for (program, 0..) |*op, ip| {
         switch (op.*) {
-            .@"if" => {
+            .@"if", .@"while" => {
                 try stack.append(ip);
             },
             .@"else" => {
@@ -92,11 +94,21 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
                 }
                 try stack.append(ip);
             },
-            .end => {
-                const if_ip = stack.pop();
-                switch (program[if_ip]) {
+            .do => |*targ| {
+                const while_ip = stack.pop();
+                targ.* = while_ip;
+                try stack.append(ip);
+            },
+            .end => |*end_targ| {
+                const block_ip = stack.pop();
+                switch (program[block_ip]) {
                     .@"if", .@"else" => |*targ| {
                         targ.* = ip;
+                        end_targ.* = ip + 1;
+                    },
+                    .do => |*targ| {
+                        end_targ.* = targ.*;
+                        targ.* = ip + 1;
                     },
                     else => {
                         std.debug.print("`end` can only close `if`-blocks\n", .{});

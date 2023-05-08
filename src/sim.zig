@@ -47,7 +47,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
                 stderr.print("{d}\n", .{x}) catch unreachable;
                 ip += 1;
             },
-            .@"if" => |maybe_targ| {
+            .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 const x = stack.pop();
                 switch (x) {
@@ -55,12 +55,12 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
                     else => ip += 1,
                 }
             },
-            .@"else" => |maybe_targ| {
+            .@"while" => {
+                ip += 1;
+            },
+            .@"else", .end => |maybe_targ| {
                 const targ = maybe_targ.?;
                 ip = targ;
-            },
-            .end => {
-                ip += 1;
             },
             .dup => {
                 const x = stack.pop();
