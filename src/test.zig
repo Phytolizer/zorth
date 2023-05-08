@@ -4,7 +4,7 @@ const shift = @import("porth-args").shift;
 const driver = @import("porth-driver");
 const path_mod = @import("porth-path");
 
-const TestError = error{TestFail} ||
+const TestError = error{ SimFail, ComFail, TestFail } ||
     std.mem.Allocator.Error ||
     std.ChildProcess.SpawnError ||
     driver.Error ||
@@ -44,7 +44,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
             \\    {s}
             \\
         , .{ expected, sim_out_buf.items });
-        return error.TestFail;
+        return error.SimFail;
     }
     var com_out_buf = std.ArrayList(u8).init(gpa);
     defer com_out_buf.deinit();
@@ -64,9 +64,8 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
             \\    {s}
             \\
         , .{ expected, com_out_buf.items });
-        return error.TestFail;
+        return error.ComFail;
     }
-    std.debug.print("[INFO] {s} OK\n", .{path});
 }
 
 fn record(gpa: std.mem.Allocator, path: []const u8) TestError!void {
@@ -96,14 +95,32 @@ fn walkTests(
     var walk = try dir.walk(gpa);
     defer walk.deinit();
     const path = std.fs.path;
+
+    var sim_failed: usize = 0;
+    var com_failed: usize = 0;
+
     while (try walk.next()) |ent|
         if (ent.kind == .File and
             std.mem.eql(u8, path.extension(ent.basename), ".porth"))
         {
             const full_path = try path.join(gpa, &.{ "tests", ent.path });
             defer gpa.free(full_path);
-            try f(gpa, full_path);
+            f(gpa, full_path) catch |e| switch (e) {
+                error.SimFail => sim_failed += 1,
+                error.ComFail => com_failed += 1,
+                else => return e,
+            };
         };
+
+    if (f == runTest) {
+        std.debug.print(
+            "Simulation failed: {d}, Compilation failed: {d}\n",
+            .{ sim_failed, com_failed },
+        );
+        if (sim_failed +| com_failed > 0) {
+            return error.TestFail;
+        }
+    }
 }
 
 fn usage(writer: anytype, exe_name: []const u8) !void {
