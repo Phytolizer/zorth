@@ -9,7 +9,14 @@ fn streq(a: []const u8, b: []const u8) bool {
 
 const Token = struct {
     loc: Op.Location,
-    word: []const u8,
+    value: Value,
+
+    const Value = union(enum) {
+        word: []const u8,
+        int: u63,
+
+        pub const Tag = std.meta.Tag(@This());
+    };
 };
 
 const word_map = std.ComptimeStringMap(Op.Code, .{
@@ -50,14 +57,23 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
 });
 
 fn parseTokenAsOp(token: Token) ParseError!Op {
-    const code = word_map.get(token.word) orelse blk: {
-        const value = std.fmt.parseInt(u63, token.word, 10) catch {
-            std.debug.print("{}: unknown word {s}\n", .{ token.loc, token.word });
-            return error.Parse;
-        };
-        break :blk Op.Code{ .push = value };
+    return switch (token.value) {
+        .int => |i| .{ .loc = token.loc, .code = .{ .push = i } },
+        .word => |w| .{
+            .loc = token.loc,
+            .code = word_map.get(w) orelse {
+                std.debug.print("{}: unknown word {s}\n", .{ token.loc, w });
+                return error.Parse;
+            },
+        },
     };
-    return Op.init(token.loc, code);
+}
+
+fn lexWord(word: []const u8) Token.Value {
+    return if (std.fmt.parseInt(u63, word, 10)) |int|
+        .{ .int = int }
+    else |_|
+        .{ .word = word };
 }
 
 fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
@@ -85,7 +101,7 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
                     .row = row + 1,
                     .col = col + 1,
                 },
-                .word = word,
+                .value = lexWord(word),
             }));
         }
     }
