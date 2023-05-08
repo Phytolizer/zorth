@@ -107,7 +107,9 @@ pub fn run(
         if (run_flag) {
             const relpath = try path.join(gpa, &.{ ".", basename });
             defer gpa.free(relpath);
-            return try cmd.captureCmd(gpa, &.{relpath}, stdout);
+            const run_args = try std.mem.concat(gpa, []const u8, &.{ &.{relpath}, argp });
+            defer gpa.free(run_args);
+            return try cmd.captureCmd(gpa, run_args, stdout);
         }
     } else if (std.mem.eql(u8, subcommand, "help")) {
         usage(stdout, program_name);
