@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: goto-bus-stop/setup-zig@v2
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install nasm
       - run: |
           zig build test
           zig build test -- -f examples
