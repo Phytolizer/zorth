@@ -14,22 +14,19 @@ const Token = struct {
     word: []const u8,
 };
 
+const word_map = std.ComptimeStringMap(Op, .{
+    .{ "+", .plus },
+    .{ "-", .minus },
+    .{ ".", .dump },
+    .{ "=", .equal },
+    .{ "if", .{ .@"if" = null } },
+    .{ "else", .{ .@"else" = null } },
+    .{ "end", .end },
+    .{ "dup", .dup },
+});
+
 fn parseTokenAsOp(token: Token) ParseError!Op {
-    return if (streq(token.word, "+"))
-        .plus
-    else if (streq(token.word, "-"))
-        .minus
-    else if (streq(token.word, "="))
-        .equal
-    else if (streq(token.word, "."))
-        .dump
-    else if (streq(token.word, "if"))
-        .{ .@"if" = null }
-    else if (streq(token.word, "else"))
-        .{ .@"else" = null }
-    else if (streq(token.word, "end"))
-        .end
-    else blk: {
+    return word_map.get(token.word) orelse blk: {
         const value = std.fmt.parseInt(u63, token.word, 10) catch {
             std.debug.print(
                 "{s}:{d}:{d}: unknown word {s}\n",
@@ -111,6 +108,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .minus,
             .equal,
             .dump,
+            .dup,
             => {},
         }
     }

@@ -1,13 +1,21 @@
 const std = @import("std");
 pub const Op = union(enum) {
     push: u63,
+    // Simple.
     plus,
     minus,
     equal,
+
+    // I/O.
+    dump,
+
+    // Control-flow.
     @"if": ?usize,
     @"else": ?usize,
     end,
-    dump,
+
+    // Stack.
+    dup,
 
     pub const Code = std.meta.Tag(@This());
     const Self = @This();

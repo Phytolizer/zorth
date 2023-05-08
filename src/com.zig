@@ -55,6 +55,10 @@ pub fn compileProgram(
                 try emit(&out, "cmove rcx, rdx");
                 try emit(&out, "push rcx");
             },
+            .dump => {
+                try emit(&out, "pop rdi");
+                try emit(&out, "call dump");
+            },
             .@"if" => |maybe_targ| {
                 const targ = maybe_targ.?;
                 try emit(&out, "pop rax");
@@ -66,9 +70,10 @@ pub fn compileProgram(
                 try emitf(&out, "jmp " ++ porth_addr_prefix ++ "{d}", .{targ});
             },
             .end => {},
-            .dump => {
-                try emit(&out, "pop rdi");
-                try emit(&out, "call dump");
+            .dup => {
+                try emit(&out, "pop rax");
+                try emit(&out, "push rax");
+                try emit(&out, "push rax");
             },
         }
     }

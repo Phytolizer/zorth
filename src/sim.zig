@@ -38,6 +38,11 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
                 binaryOp(&stack, math.equal);
                 ip += 1;
             },
+            .dump => {
+                const x = stack.pop();
+                stderr.print("{d}\n", .{x}) catch unreachable;
+                ip += 1;
+            },
             .@"if" => |maybe_targ| {
                 const targ = maybe_targ.?;
                 const x = stack.pop();
@@ -53,9 +58,9 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
             .end => {
                 ip += 1;
             },
-            .dump => {
+            .dup => {
                 const x = stack.pop();
-                stderr.print("{d}\n", .{x}) catch unreachable;
+                try stack.appendSlice(&.{ x, x });
                 ip += 1;
             },
         }
