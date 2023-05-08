@@ -70,6 +70,30 @@ pub fn compileProgram(
                 try emit(&out, "setl al");
                 try emit(&out, "push rax");
             },
+            .shr => {
+                try emit(&out, "pop rcx");
+                try emit(&out, "pop rbx");
+                try emit(&out, "shr rbx, cl");
+                try emit(&out, "push rbx");
+            },
+            .shl => {
+                try emit(&out, "pop rcx");
+                try emit(&out, "pop rbx");
+                try emit(&out, "shl rbx, cl");
+                try emit(&out, "push rbx");
+            },
+            .bor => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "or rax, rbx");
+                try emit(&out, "push rax");
+            },
+            .band => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "and rax, rbx");
+                try emit(&out, "push rax");
+            },
             .dump => {
                 try emit(&out, "pop rdi");
                 try emit(&out, "call dump");

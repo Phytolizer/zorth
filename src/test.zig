@@ -32,7 +32,13 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
 
     const txt_path = try expectedPath(gpa, path);
     defer gpa.free(txt_path);
-    const expected = try std.fs.cwd().readFileAlloc(gpa, txt_path, std.math.maxInt(usize));
+    const expected = std.fs.cwd().readFileAlloc(gpa, txt_path, std.math.maxInt(usize)) catch |e| switch (e) {
+        error.FileNotFound => {
+            std.debug.print("File {s} not found. Please record it.\n", .{txt_path});
+            return e;
+        },
+        else => return e,
+    };
     defer gpa.free(expected);
 
     if (!std.mem.eql(u8, sim_out_buf.items, expected)) {

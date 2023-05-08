@@ -17,3 +17,19 @@ pub fn gt(comptime T: type, x: T, y: T) T {
 pub fn lt(comptime T: type, x: T, y: T) T {
     return @boolToInt(x < y);
 }
+
+pub fn shr(comptime T: type, x: T, y: T) T {
+    return x >> @truncate(u6, @intCast(usize, y));
+}
+
+pub fn shl(comptime T: type, x: T, y: T) T {
+    return x << @truncate(u6, @intCast(usize, y));
+}
+
+pub fn bor(comptime T: type, x: T, y: T) T {
+    return x | y;
+}
+
+pub fn band(comptime T: type, x: T, y: T) T {
+    return x & y;
+}

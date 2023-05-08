@@ -26,6 +26,12 @@ pub const Code = union(enum) {
     gt,
     lt,
 
+    // Bitwise.
+    shr,
+    shl,
+    bor,
+    band,
+
     // I/O.
     dump,
 

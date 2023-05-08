@@ -48,6 +48,22 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 binaryOp(&stack, math.lt);
                 ip += 1;
             },
+            .shr => {
+                binaryOp(&stack, math.shr);
+                ip += 1;
+            },
+            .shl => {
+                binaryOp(&stack, math.shl);
+                ip += 1;
+            },
+            .bor => {
+                binaryOp(&stack, math.bor);
+                ip += 1;
+            },
+            .band => {
+                binaryOp(&stack, math.band);
+                ip += 1;
+            },
             .dump => {
                 const x = stack.pop();
                 try stdout.print("{d}\n", .{x});
