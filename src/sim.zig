@@ -65,7 +65,12 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 mem[@intCast(usize, addr)] = @truncate(u8, @intCast(usize, value));
                 ip += 1;
             },
-            .syscall1 => std.debug.panic("UNIMPLEMENTED", .{}),
+            .syscall1,
+            .syscall2,
+            .syscall4,
+            .syscall5,
+            .syscall6,
+            => std.debug.panic("UNIMPLEMENTED", .{}),
             .syscall3 => {
                 const syscall_number = stack.pop();
                 const arg1 = stack.pop();

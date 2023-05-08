@@ -85,11 +85,44 @@ pub fn compileProgram(
                 try emit(&out, "pop rdi");
                 try emit(&out, "syscall");
             },
+            .syscall2 => {
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rdi");
+                try emit(&out, "pop rsi");
+                try emit(&out, "syscall");
+            },
             .syscall3 => {
                 try emit(&out, "pop rax");
                 try emit(&out, "pop rdi");
                 try emit(&out, "pop rsi");
                 try emit(&out, "pop rdx");
+                try emit(&out, "syscall");
+            },
+            .syscall4 => {
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rdi");
+                try emit(&out, "pop rsi");
+                try emit(&out, "pop rdx");
+                try emit(&out, "pop r10");
+                try emit(&out, "syscall");
+            },
+            .syscall5 => {
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rdi");
+                try emit(&out, "pop rsi");
+                try emit(&out, "pop rdx");
+                try emit(&out, "pop r10");
+                try emit(&out, "pop r8");
+                try emit(&out, "syscall");
+            },
+            .syscall6 => {
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rdi");
+                try emit(&out, "pop rsi");
+                try emit(&out, "pop rdx");
+                try emit(&out, "pop r10");
+                try emit(&out, "pop r8");
+                try emit(&out, "pop r9");
                 try emit(&out, "syscall");
             },
             .@"if", .do => |maybe_targ| {
