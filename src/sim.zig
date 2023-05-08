@@ -19,6 +19,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
     const stdout = stdout_buf.writer();
     var mem = try gpa.alloc(u8, @import("opts").mem_capacity);
     defer gpa.free(mem);
+    @memset(mem, 0);
 
     var ip: usize = 0;
     while (ip < program.len) {
