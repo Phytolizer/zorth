@@ -53,10 +53,11 @@ pub fn printQuoted(cmd: []const []const u8) void {
 }
 
 pub fn callCmd(gpa: std.mem.Allocator, cmd: []const []const u8) !void {
-    try captureCmd(gpa, cmd, std.io.getStdOut());
+    const code = try captureCmd(gpa, cmd, std.io.getStdOut());
+    if (code != 0) return error.ExitStatus;
 }
 
-pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anytype) !void {
+pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anytype) !u8 {
     std.debug.print("[CMD]", .{});
     printQuoted(cmd);
     std.debug.print("\n", .{});
@@ -74,9 +75,11 @@ pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anyty
     std.debug.print("{s}", .{err.items});
     try stdout.writeAll(out.items);
     switch (term) {
-        .Exited => |code| if (code != 0) {
-            std.debug.print("ERROR: failed with code {d}\n", .{code});
-            return error.BadExit;
+        .Exited => |code| {
+            if (code != 0) {
+                std.debug.print("ERROR: failed with code {d}\n", .{code});
+            }
+            return code;
         },
         else => {
             std.debug.print("ERROR: crashed\n", .{});

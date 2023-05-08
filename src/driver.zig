@@ -32,7 +32,7 @@ pub fn run(
     args: []const []const u8,
     stderr: anytype,
     stdout: anytype,
-) !void {
+) !u8 {
     var argp = args;
     const program_name = shift(&argp) orelse unreachable;
 
@@ -111,7 +111,7 @@ pub fn run(
         if (run_flag) {
             const relpath = try path.join(gpa, &.{ ".", basename });
             defer gpa.free(relpath);
-            try cmd.captureCmd(gpa, &.{relpath}, stdout);
+            return try cmd.captureCmd(gpa, &.{relpath}, stdout);
         }
     } else if (std.mem.eql(u8, subcommand, "help")) {
         usage(stdout, program_name);
@@ -120,4 +120,5 @@ pub fn run(
         std.debug.print("ERROR: unknown subcommand {s}\n", .{subcommand});
         return error.Usage;
     }
+    return 0;
 }

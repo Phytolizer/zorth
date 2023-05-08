@@ -1,7 +1,7 @@
 const std = @import("std");
 const driver = @import("porth-driver");
 
-fn run() !void {
+fn run() !u8 {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 10 }){};
     defer std.debug.assert(gpa_state.deinit() == .ok);
     const gpa = gpa_state.allocator();
@@ -12,9 +12,9 @@ fn run() !void {
     const stderr = std.io.getStdErr().writer();
     const stdout = std.io.getStdOut().writer();
 
-    try driver.run(gpa, args, stderr, stdout);
+    return try driver.run(gpa, args, stderr, stdout);
 }
 
 pub fn main() void {
-    run() catch std.process.exit(1);
+    std.process.exit(run() catch 1);
 }

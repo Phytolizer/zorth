@@ -12,7 +12,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) !void {
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&sim_cmd);
     std.debug.print("\n", .{});
-    try driver.run(gpa, &sim_cmd, stderr, sim_out);
+    _ = try driver.run(gpa, &sim_cmd, stderr, sim_out);
     var com_out_buf = std.ArrayList(u8).init(gpa);
     defer com_out_buf.deinit();
     const com_out = com_out_buf.writer();
@@ -20,7 +20,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) !void {
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&com_cmd);
     std.debug.print("\n", .{});
-    try driver.run(gpa, &com_cmd, stderr, com_out);
+    _ = try driver.run(gpa, &com_cmd, stderr, com_out);
 
     if (!std.mem.eql(u8, sim_out_buf.items, com_out_buf.items)) {
         std.debug.print(
