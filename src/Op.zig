@@ -45,6 +45,7 @@ pub const Code = union(enum) {
     store,
 
     // System calls.
+    syscall0,
     syscall1,
     syscall2,
     syscall3,

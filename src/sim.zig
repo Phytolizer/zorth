@@ -108,6 +108,16 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
             .syscall5,
             .syscall6,
             => std.debug.panic("UNIMPLEMENTED", .{}),
+            .syscall0 => {
+                const syscall_number = stack.pop();
+                switch (syscall_number) {
+                    39 => {
+                        try stack.append(std.os.linux.getpid());
+                    },
+                    else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
+                }
+                ip += 1;
+            },
             .syscall3 => {
                 const syscall_number = stack.pop();
                 const arg1 = stack.pop();
