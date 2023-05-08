@@ -11,6 +11,8 @@ fn emitf(out: anytype, comptime fmt: []const u8, args: anytype) !void {
     try out.print("    " ++ fmt ++ "\n", args);
 }
 
+const porth_addr_prefix = ".porth_addr_";
+
 pub fn compileProgram(
     program: []const Op,
     out_file_path: []const u8,
@@ -25,7 +27,8 @@ pub fn compileProgram(
     try out.writeAll(dump_asm);
     try out.writeAll("global _start\n");
     try out.writeAll("_start:\n");
-    for (program) |op| {
+    for (program, 0..) |op, ip| {
+        try out.print(porth_addr_prefix ++ "{d}:\n", .{ip});
         try out.writeAll("    ;; -- ");
         try Op.display(op, out);
         try out.writeAll(" --\n");
@@ -50,13 +53,22 @@ pub fn compileProgram(
                 try emit(&out, "pop rbx");
                 try emit(&out, "cmp rax, rbx");
                 try emit(&out, "cmove rcx, rdx");
+                try emit(&out, "push rcx");
             },
+            .@"if" => |maybe_targ| {
+                const targ = maybe_targ.?;
+                try emit(&out, "pop rax");
+                try emit(&out, "test rax, rax");
+                try emitf(&out, "jz " ++ porth_addr_prefix ++ "{d}", .{targ});
+            },
+            .end => {},
             .dump => {
                 try emit(&out, "pop rdi");
                 try emit(&out, "call dump");
             },
         }
     }
+    try out.print(porth_addr_prefix ++ "{d}:\n", .{program.len});
     const SYS_WRITE = "60";
     try emit(&out, "mov rax, " ++ SYS_WRITE);
     try emit(&out, "mov rdi, 0");

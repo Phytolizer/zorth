@@ -23,6 +23,10 @@ fn parseTokenAsOp(token: Token) ParseError!Op {
         .equal
     else if (streq(token.word, "."))
         .dump
+    else if (streq(token.word, "if"))
+        .{ .@"if" = null }
+    else if (streq(token.word, "end"))
+        .end
     else blk: {
         const value = std.fmt.parseInt(u63, token.word, 10) catch {
             std.debug.print(
@@ -64,9 +68,44 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
     return try program.toOwnedSlice();
 }
 
+const SemaError = error{Sema} || std.mem.Allocator.Error;
+
+fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
+    var stack = std.ArrayList(usize).init(gpa);
+    defer stack.deinit();
+
+    for (program, 0..) |*op, ip| {
+        switch (op.*) {
+            .@"if" => {
+                try stack.append(ip);
+            },
+            .end => {
+                const if_ip = stack.pop();
+                switch (program[if_ip]) {
+                    .@"if" => |*targ| {
+                        targ.* = ip;
+                    },
+                    else => {
+                        std.debug.print("`end` can only close `if`-blocks\n", .{});
+                        return error.Sema;
+                    },
+                }
+            },
+            .push,
+            .plus,
+            .minus,
+            .equal,
+            .dump,
+            => {},
+        }
+    }
+}
+
 pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) ![]Op {
     const f = try std.fs.cwd().openFile(file_path, .{});
     defer f.close();
 
-    return try parse(gpa, f.reader(), file_path);
+    const program = try parse(gpa, f.reader(), file_path);
+    try crossReferenceBlocks(gpa, program);
+    return program;
 }

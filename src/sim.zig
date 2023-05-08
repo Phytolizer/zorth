@@ -18,23 +18,41 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
     defer stderr_buf.flush() catch unreachable;
     const stderr = stderr_buf.writer();
 
-    for (program) |op| {
+    var ip: usize = 0;
+    while (ip < program.len) {
+        const op = program[ip];
         switch (op) {
             .push => |x| {
                 try stack.append(x);
+                ip += 1;
             },
             .plus => {
                 binaryOp(&stack, math.add);
+                ip += 1;
             },
             .minus => {
                 binaryOp(&stack, math.sub);
+                ip += 1;
             },
             .equal => {
                 binaryOp(&stack, math.equal);
+                ip += 1;
+            },
+            .@"if" => |maybe_targ| {
+                const targ = maybe_targ.?;
+                const x = stack.pop();
+                switch (x) {
+                    0 => ip = targ,
+                    else => ip += 1,
+                }
+            },
+            .end => {
+                ip += 1;
             },
             .dump => {
                 const x = stack.pop();
                 stderr.print("{d}\n", .{x}) catch unreachable;
+                ip += 1;
             },
         }
     }
