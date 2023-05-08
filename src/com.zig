@@ -66,6 +66,9 @@ pub fn compileProgram(
                 try emit(&out, "pop rdi");
                 try emit(&out, "call dump");
             },
+            .mem => {
+                try emit(&out, "push mem");
+            },
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 try emit(&out, "pop rax");
@@ -94,4 +97,6 @@ pub fn compileProgram(
     try emit(&out, "mov rax, " ++ SYS_WRITE);
     try emit(&out, "mov rdi, 0");
     try emit(&out, "syscall");
+    try out.writeAll("segment .bss\n");
+    try out.print("mem: resb {d}\n", .{@import("opts").mem_capacity});
 }

@@ -4,12 +4,24 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const mem_capacity = b.option(
+        usize,
+        "mem_capacity",
+        "Maximum memory for Porth programs, default 640KiB",
+    ) orelse 640 * 1024;
+    const opts = b.addOptions();
+    opts.addOption(usize, "mem_capacity", mem_capacity);
+    const opts_mod = opts.createModule();
+
     const cmd = b.addModule("porth-cmd", .{
         .source_file = .{ .path = "src/cmd.zig" },
     });
     const porth_driver = b.addModule("porth-driver", .{
         .source_file = .{ .path = "src/driver.zig" },
-        .dependencies = &.{.{ .name = "porth-cmd", .module = cmd }},
+        .dependencies = &.{
+            .{ .name = "porth-cmd", .module = cmd },
+            .{ .name = "opts", .module = opts_mod },
+        },
     });
 
     const exe = b.addExecutable(.{

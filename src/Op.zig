@@ -28,6 +28,9 @@ pub const Code = union(enum) {
     // I/O.
     dump,
 
+    // Memory access.
+    mem,
+
     // Control-flow.
     @"if": ?usize,
     @"else": ?usize,
