@@ -1,0 +1,18 @@
+name: Zig
+
+on:
+  push:
+    branches: [ reee ]
+  pull_request:
+    branches: [ reee ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: goto-bus-stop/setup-zig@v2
+      - run: |
+          zig build test
+          zig build test -- -f examples
