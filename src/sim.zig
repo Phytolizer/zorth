@@ -29,6 +29,9 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
             .minus => {
                 binaryOp(&stack, math.sub);
             },
+            .equal => {
+                binaryOp(&stack, math.equal);
+            },
             .dump => {
                 const x = stack.pop();
                 stderr.print("{d}\n", .{x}) catch unreachable;

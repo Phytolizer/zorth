@@ -3,6 +3,7 @@ pub const Op = union(enum) {
     push: u63,
     plus,
     minus,
+    equal,
     dump,
 
     pub const Code = std.meta.Tag(@This());

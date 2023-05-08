@@ -19,6 +19,8 @@ fn parseTokenAsOp(token: Token) ParseError!Op {
         .plus
     else if (streq(token.word, "-"))
         .minus
+    else if (streq(token.word, "="))
+        .equal
     else if (streq(token.word, "."))
         .dump
     else blk: {
