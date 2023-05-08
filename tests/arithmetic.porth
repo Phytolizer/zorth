@@ -1,8 +1,19 @@
+// Prepare the separation line
+0 while dup 30 < do
+  dup mem + 45 .
+  1 +
+end
+mem + 10 .
+
 // add
 34 35 + dump
 
+31 mem 1 1 syscall3
+
 // subtract
 500 80 - dump
+
+31 mem 1 1 syscall3
 
 // modulo
 5 100 mod dump
