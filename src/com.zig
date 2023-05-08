@@ -150,12 +150,14 @@ pub fn compileProgram(
                 try emit(&out, "pop rax");
                 try emit(&out, "pop rdi");
                 try emit(&out, "syscall");
+                try emit(&out, "push rax");
             },
             .syscall2 => {
                 try emit(&out, "pop rax");
                 try emit(&out, "pop rdi");
                 try emit(&out, "pop rsi");
                 try emit(&out, "syscall");
+                try emit(&out, "push rax");
             },
             .syscall3 => {
                 try emit(&out, "pop rax");
@@ -163,6 +165,7 @@ pub fn compileProgram(
                 try emit(&out, "pop rsi");
                 try emit(&out, "pop rdx");
                 try emit(&out, "syscall");
+                try emit(&out, "push rax");
             },
             .syscall4 => {
                 try emit(&out, "pop rax");
@@ -171,6 +174,7 @@ pub fn compileProgram(
                 try emit(&out, "pop rdx");
                 try emit(&out, "pop r10");
                 try emit(&out, "syscall");
+                try emit(&out, "push rax");
             },
             .syscall5 => {
                 try emit(&out, "pop rax");
@@ -180,6 +184,7 @@ pub fn compileProgram(
                 try emit(&out, "pop r10");
                 try emit(&out, "pop r8");
                 try emit(&out, "syscall");
+                try emit(&out, "push rax");
             },
             .syscall6 => {
                 try emit(&out, "pop rax");
@@ -190,6 +195,7 @@ pub fn compileProgram(
                 try emit(&out, "pop r8");
                 try emit(&out, "pop r9");
                 try emit(&out, "syscall");
+                try emit(&out, "push rax");
             },
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;

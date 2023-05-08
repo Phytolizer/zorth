@@ -124,6 +124,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                             2 => std.debug.print("{s}", .{s}),
                             else => std.debug.panic("unknown file descriptor {d}", .{fd}),
                         }
+                        try stack.append(arg3);
                     },
                     else => std.debug.panic("unknwon syscall number {d}", .{syscall_number}),
                 }
