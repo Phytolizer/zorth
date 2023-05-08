@@ -33,6 +33,10 @@ pub const Code = union(enum) {
     load,
     store,
 
+    // System calls.
+    syscall1,
+    syscall3,
+
     // Control-flow.
     @"if": ?usize,
     @"else": ?usize,

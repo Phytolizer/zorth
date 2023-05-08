@@ -19,6 +19,8 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "mem", .mem },
     .{ ",", .load },
     .{ ".", .store },
+    .{ "syscall1", .syscall1 },
+    .{ "syscall3", .syscall3 },
     .{ "=", .equal },
     .{ ">", .gt },
     .{ "if", .{ .@"if" = null } },
@@ -42,7 +44,7 @@ fn parseTokenAsOp(token: Token) ParseError!Op {
 
 fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
     in.readUntilDelimiterArrayList(buf, '\n', std.math.maxInt(usize)) catch |e| switch (e) {
-        error.EndOfStream => return null,
+        error.EndOfStream => if (buf.items.len == 0) return null,
         else => return e,
     };
     return buf.items;
@@ -127,6 +129,8 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .mem,
             .load,
             .store,
+            .syscall1,
+            .syscall3,
             .dup,
             => {},
         }

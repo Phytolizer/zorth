@@ -65,6 +65,28 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 mem[@intCast(usize, addr)] = @truncate(u8, @intCast(usize, value));
                 ip += 1;
             },
+            .syscall1 => std.debug.panic("UNIMPLEMENTED", .{}),
+            .syscall3 => {
+                const syscall_number = stack.pop();
+                const arg1 = stack.pop();
+                const arg2 = stack.pop();
+                const arg3 = stack.pop();
+                switch (syscall_number) {
+                    1 => {
+                        const fd = arg1;
+                        const buf = @intCast(usize, arg2);
+                        const count = @intCast(usize, arg3);
+                        const s = mem[buf .. buf + count];
+                        switch (fd) {
+                            1 => try stdout.writeAll(s),
+                            2 => std.debug.print("{s}", .{s}),
+                            else => std.debug.panic("unknown file descriptor {d}", .{fd}),
+                        }
+                    },
+                    else => std.debug.panic("unknwon syscall number {d}", .{syscall_number}),
+                }
+                ip += 1;
+            },
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 const x = stack.pop();

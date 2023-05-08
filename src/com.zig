@@ -80,6 +80,18 @@ pub fn compileProgram(
                 try emit(&out, "pop rax");
                 try emit(&out, "mov [rax], bl");
             },
+            .syscall1 => {
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rdi");
+                try emit(&out, "syscall");
+            },
+            .syscall3 => {
+                try emit(&out, "pop rax");
+                try emit(&out, "pop rdi");
+                try emit(&out, "pop rsi");
+                try emit(&out, "pop rdx");
+                try emit(&out, "syscall");
+            },
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 try emit(&out, "pop rax");
