@@ -11,12 +11,6 @@ fn emitf(out: anytype, comptime fmt: []const u8, args: anytype) !void {
     try out.print("    " ++ fmt ++ "\n", args);
 }
 
-fn emitHook(out: anytype, arg: anytype, comptime f: fn (@TypeOf(arg), @TypeOf(out)) @TypeOf(out).Error!void) !void {
-    try out.writeAll("    ");
-    try f(arg, out);
-    try out.writeByte('\n');
-}
-
 pub fn compileProgram(
     program: []const Op,
     out_file_path: []const u8,
@@ -31,7 +25,7 @@ pub fn compileProgram(
     try out.writeAll("_start:\n");
     for (program) |op| {
         try out.writeAll("    ;; -- ");
-        try Op.display(@TypeOf(out))(op, out);
+        try Op.display(op, out);
         try out.writeAll(" --\n");
         switch (op) {
             .push => |x| try emitf(&out, "push {d}", .{x}),
