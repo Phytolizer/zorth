@@ -1,5 +1,5 @@
 const std = @import("std");
-const Op = @import("ops.zig").Op;
+const Op = @import("Op.zig");
 
 const dump_asm = @embedFile("dump.asm");
 
@@ -30,9 +30,9 @@ pub fn compileProgram(
     for (program, 0..) |op, ip| {
         try out.print(porth_addr_prefix ++ "{d}:\n", .{ip});
         try out.writeAll("    ;; -- ");
-        try Op.display(op, out);
+        try op.code.display(out);
         try out.writeAll(" --\n");
-        switch (op) {
+        switch (op.code) {
             .push => |x| try emitf(&out, "push {d}", .{x}),
             .plus => {
                 try emit(&out, "pop rbx");

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Op = @import("ops.zig").Op;
+const Op = @import("Op.zig");
 
 const ParseError = error{Parse};
 
@@ -8,13 +8,11 @@ fn streq(a: []const u8, b: []const u8) bool {
 }
 
 const Token = struct {
-    file_path: []const u8,
-    row: usize,
-    col: usize,
+    loc: Op.Location,
     word: []const u8,
 };
 
-const word_map = std.ComptimeStringMap(Op, .{
+const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .plus },
     .{ "-", .minus },
     .{ ".", .dump },
@@ -29,16 +27,14 @@ const word_map = std.ComptimeStringMap(Op, .{
 });
 
 fn parseTokenAsOp(token: Token) ParseError!Op {
-    return word_map.get(token.word) orelse blk: {
+    const code = word_map.get(token.word) orelse blk: {
         const value = std.fmt.parseInt(u63, token.word, 10) catch {
-            std.debug.print(
-                "{s}:{d}:{d}: unknown word {s}\n",
-                .{ token.file_path, token.row, token.col, token.word },
-            );
+            std.debug.print("{}: unknown word {s}\n", .{ token.loc, token.word });
             return error.Parse;
         };
-        break :blk .{ .push = value };
+        break :blk Op.Code{ .push = value };
     };
+    return Op.init(token.loc, code);
 }
 
 fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
@@ -61,9 +57,11 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
         while (it.next()) |word| {
             const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
             try program.append(try parseTokenAsOp(.{
-                .file_path = file_path,
-                .row = row + 1,
-                .col = col + 1,
+                .loc = .{
+                    .file_path = file_path,
+                    .row = row + 1,
+                    .col = col + 1,
+                },
                 .word = word,
             }));
         }
@@ -78,13 +76,13 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
     defer stack.deinit();
 
     for (program, 0..) |*op, ip| {
-        switch (op.*) {
+        switch (op.code) {
             .@"if", .@"while" => {
                 try stack.append(ip);
             },
             .@"else" => {
                 const if_ip = stack.pop();
-                switch (program[if_ip]) {
+                switch (program[if_ip].code) {
                     .@"if" => |*targ| {
                         targ.* = ip + 1;
                     },
@@ -102,7 +100,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             },
             .end => |*end_targ| {
                 const block_ip = stack.pop();
-                switch (program[block_ip]) {
+                switch (program[block_ip].code) {
                     .@"if", .@"else" => |*targ| {
                         targ.* = ip;
                         end_targ.* = ip + 1;

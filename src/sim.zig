@@ -1,5 +1,5 @@
 const std = @import("std");
-const Op = @import("ops.zig").Op;
+const Op = @import("Op.zig");
 const math = @import("math.zig");
 
 fn binaryOp(
@@ -21,7 +21,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op) !void {
     var ip: usize = 0;
     while (ip < program.len) {
         const op = program[ip];
-        switch (op) {
+        switch (op.code) {
             .push => |x| {
                 try stack.append(x);
                 ip += 1;

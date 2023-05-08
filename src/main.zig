@@ -1,5 +1,5 @@
 const std = @import("std");
-const Op = @import("ops.zig").Op;
+const Op = @import("Op.zig");
 const sim = @import("sim.zig");
 const com = @import("com.zig");
 const cmd = @import("cmd.zig");

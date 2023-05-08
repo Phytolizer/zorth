@@ -1,5 +1,23 @@
 const std = @import("std");
-pub const Op = union(enum) {
+
+loc: Location,
+code: Code,
+
+pub fn init(loc: Location, code: Code) @This() {
+    return .{ .loc = loc, .code = code };
+}
+
+pub const Location = struct {
+    file_path: []const u8,
+    row: usize,
+    col: usize,
+
+    pub fn format(self: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{s}:{d}:{d}", .{ self.file_path, self.row, self.col });
+    }
+};
+
+pub const Code = union(enum) {
     push: u63,
     // Simple.
     plus,
@@ -20,7 +38,7 @@ pub const Op = union(enum) {
     // Stack.
     dup,
 
-    pub const Code = std.meta.Tag(@This());
+    pub const Tag = std.meta.Tag(@This());
     const Self = @This();
 
     pub fn display(self: Self, out: anytype) !void {
@@ -48,7 +66,7 @@ pub const Op = union(enum) {
         }
     }
 
-    pub fn hasCode(self: Self, code: Code) bool {
+    pub fn hasCode(self: Self, code: Tag) bool {
         return std.meta.activeTag(self) == code;
     }
 };
