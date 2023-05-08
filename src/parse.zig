@@ -56,7 +56,8 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
     defer program.deinit();
     var row: usize = 0;
     while (try readLine(in, &line_buf)) |line| : (row += 1) {
-        var it = std.mem.tokenize(u8, line, &std.ascii.whitespace);
+        const before_comment = line[0 .. std.mem.indexOf(u8, line, "//") orelse line.len];
+        var it = std.mem.tokenize(u8, before_comment, &std.ascii.whitespace);
         while (it.next()) |word| {
             const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
             try program.append(try parseTokenAsOp(.{
