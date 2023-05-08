@@ -38,14 +38,14 @@ pub fn run(
 
     const subcommand = shift(&argp) orelse {
         usage(stderr, program_name);
-        std.debug.print("ERROR: no subcommand provided\n", .{});
+        std.debug.print("[ERROR] no subcommand provided\n", .{});
         return error.Usage;
     };
 
     if (std.mem.eql(u8, subcommand, "sim")) {
         const file_path = shift(&argp) orelse {
             usage(stderr, program_name);
-            std.debug.print("ERROR: no input file\n", .{});
+            std.debug.print("[ERROR] no input file\n", .{});
             return error.Usage;
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
@@ -61,7 +61,7 @@ pub fn run(
             } else if (std.mem.eql(u8, arg, "-o")) {
                 out_path_arg = shift(&argp) orelse {
                     usage(stderr, program_name);
-                    std.debug.print("ERROR: no argument to -o\n", .{});
+                    std.debug.print("[ERROR] no argument to -o\n", .{});
                     return error.Usage;
                 };
             } else {
@@ -71,7 +71,7 @@ pub fn run(
         }
         const file_path = file_path_arg orelse {
             usage(stderr, program_name);
-            std.debug.print("ERROR: no input file\n", .{});
+            std.debug.print("[ERROR] no input file\n", .{});
             return error.Usage;
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
@@ -113,7 +113,7 @@ pub fn run(
         usage(stdout, program_name);
     } else {
         usage(stderr, program_name);
-        std.debug.print("ERROR: unknown subcommand {s}\n", .{subcommand});
+        std.debug.print("[ERROR] unknown subcommand {s}\n", .{subcommand});
         return error.Usage;
     }
     return 0;

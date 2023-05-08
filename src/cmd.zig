@@ -82,12 +82,12 @@ pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anyty
     switch (term) {
         .Exited => |code| {
             if (code != 0) {
-                std.debug.print("ERROR: failed with code {d}\n", .{code});
+                std.debug.print("[ERROR] failed with code {d}\n", .{code});
             }
             return code;
         },
         else => {
-            std.debug.print("ERROR: crashed\n", .{});
+            std.debug.print("[ERROR] crashed\n", .{});
             return error.Crash;
         },
     }
