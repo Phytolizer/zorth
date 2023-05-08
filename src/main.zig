@@ -60,9 +60,16 @@ fn run() !void {
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
         defer gpa.free(program);
-        try com.compileProgram(program, "output.asm");
-        try cmd.callCmd(gpa, &.{ "nasm", "-felf64", "output.asm" });
-        try cmd.callCmd(gpa, &.{ "ld", "-o", "output", "output.o" });
+        const path = std.fs.path;
+        const basename_len = @ptrToInt(path.extension(file_path).ptr) - @ptrToInt(file_path.ptr);
+        const basename = file_path[0..basename_len];
+        const asm_path = try std.fmt.allocPrint(gpa, "{s}.asm", .{basename});
+        defer gpa.free(asm_path);
+        try com.compileProgram(program, asm_path);
+        try cmd.callCmd(gpa, &.{ "nasm", "-felf64", asm_path });
+        const obj_path = try std.fmt.allocPrint(gpa, "{s}.o", .{basename});
+        defer gpa.free(obj_path);
+        try cmd.callCmd(gpa, &.{ "ld", "-o", basename, obj_path });
     } else if (std.mem.eql(u8, subcommand, "help")) {
         usage(stdout, program_name);
     } else {
