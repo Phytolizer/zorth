@@ -34,3 +34,9 @@ mem + 10 .
 420 69 <= dump
 69 420 <= dump
 69 69  <= dump
+
+31 mem 1 1 syscall3
+
+// not equals
+69 69  != dump
+420 69 != dump
