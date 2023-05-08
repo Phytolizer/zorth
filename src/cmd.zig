@@ -52,12 +52,17 @@ pub fn printQuoted(cmd: []const []const u8) void {
     }
 }
 
-pub fn callCmd(gpa: std.mem.Allocator, cmd: []const []const u8) !void {
+pub const CaptureError = std.ChildProcess.ExecError ||
+    std.fs.File.WriteError ||
+    error{Crash};
+pub const CallError = CaptureError || error{ExitStatus};
+
+pub fn callCmd(gpa: std.mem.Allocator, cmd: []const []const u8) CallError!void {
     const code = try captureCmd(gpa, cmd, std.io.getStdOut());
     if (code != 0) return error.ExitStatus;
 }
 
-pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anytype) !u8 {
+pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anytype) CaptureError!u8 {
     std.debug.print("[CMD]", .{});
     printQuoted(cmd);
     std.debug.print("\n", .{});

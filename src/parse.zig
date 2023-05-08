@@ -158,7 +158,13 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
     }
 }
 
-pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) ![]Op {
+pub const Error = SemaError ||
+    ParseError ||
+    std.fs.File.OpenError ||
+    std.fs.File.ReadError ||
+    error{ StreamTooLong, EndOfStream };
+
+pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) Error![]Op {
     const f = std.fs.cwd().openFile(file_path, .{}) catch |e| {
         std.debug.print("ERROR: Failed to open '{s}'!\n", .{file_path});
         return e;

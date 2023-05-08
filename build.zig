@@ -16,10 +16,18 @@ pub fn build(b: *std.Build) void {
     const cmd = b.addModule("porth-cmd", .{
         .source_file = .{ .path = "src/cmd.zig" },
     });
+    const args_mod = b.addModule("porth-args", .{
+        .source_file = .{ .path = "src/args.zig" },
+    });
+    const path_mod = b.addModule("porth-path", .{
+        .source_file = .{ .path = "src/path.zig" },
+    });
     const porth_driver = b.addModule("porth-driver", .{
         .source_file = .{ .path = "src/driver.zig" },
         .dependencies = &.{
             .{ .name = "porth-cmd", .module = cmd },
+            .{ .name = "porth-args", .module = args_mod },
+            .{ .name = "porth-path", .module = path_mod },
             .{ .name = "opts", .module = opts_mod },
         },
     });
@@ -49,6 +57,8 @@ pub fn build(b: *std.Build) void {
     });
     test_exe.addModule("porth-driver", porth_driver);
     test_exe.addModule("porth-cmd", cmd);
+    test_exe.addModule("porth-args", args_mod);
+    test_exe.addModule("porth-path", path_mod);
     // update regular exe with tests to ensure i don't get them out of sync
     test_exe.step.dependOn(b.getInstallStep());
 

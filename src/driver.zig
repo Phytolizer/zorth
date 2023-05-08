@@ -3,6 +3,8 @@ const Op = @import("Op.zig");
 const sim = @import("sim.zig");
 const com = @import("com.zig");
 const cmd = @import("porth-cmd");
+const shift = @import("porth-args").shift;
+const path_mod = @import("porth-path");
 const parse = @import("parse.zig");
 
 fn usage(out: anytype, program: []const u8) void {
@@ -19,20 +21,18 @@ fn usage(out: anytype, program: []const u8) void {
     , .{program}) catch {};
 }
 
-fn shift(args: *[]const []const u8) ?[]const u8 {
-    if (args.len == 0) return null;
-
-    const result = args.*[0];
-    args.* = args.*[1..];
-    return result;
-}
+pub const Error = error{Usage} ||
+    parse.Error ||
+    std.fs.File.WriteError ||
+    std.ChildProcess.SpawnError ||
+    cmd.CallError;
 
 pub fn run(
     gpa: std.mem.Allocator,
     args: []const []const u8,
     stderr: anytype,
     stdout: anytype,
-) !u8 {
+) Error!u8 {
     var argp = args;
     const program_name = shift(&argp) orelse unreachable;
 
@@ -93,12 +93,8 @@ pub fn run(
                     .{ dir, path.sep, name },
                 );
             }
-            const basename_len = @ptrToInt(path.extension(op).ptr) - @ptrToInt(op.ptr);
-            break :blk op[0..basename_len];
-        } else blk: {
-            const basename_len = @ptrToInt(path.extension(file_path).ptr) - @ptrToInt(file_path.ptr);
-            break :blk file_path[0..basename_len];
-        };
+            break :blk path_mod.withoutExtension(op);
+        } else path_mod.withoutExtension(file_path);
         defer if (basename_alloc) gpa.free(basename);
         const asm_path = try std.fmt.allocPrint(gpa, "{s}.asm", .{basename});
         defer gpa.free(asm_path);
