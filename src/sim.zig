@@ -17,6 +17,8 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
     var stdout_buf = std.io.bufferedWriter(raw_stdout);
     defer stdout_buf.flush() catch {};
     const stdout = stdout_buf.writer();
+    var mem = try gpa.alloc(u8, @import("opts").mem_capacity);
+    defer gpa.free(mem);
 
     var ip: usize = 0;
     while (ip < program.len) {
@@ -47,7 +49,22 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 try stdout.print("{d}\n", .{x});
                 ip += 1;
             },
-            .mem, .load, .store => @panic("UNIMPLEMENTED"),
+            .mem => {
+                try stack.append(0);
+                ip += 1;
+            },
+            .load => {
+                const addr = stack.pop();
+                const byte = mem[@intCast(usize, addr)];
+                try stack.append(byte);
+                ip += 1;
+            },
+            .store => {
+                const value = stack.pop();
+                const addr = stack.pop();
+                mem[@intCast(usize, addr)] = @truncate(u8, @intCast(usize, value));
+                ip += 1;
+            },
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 const x = stack.pop();
