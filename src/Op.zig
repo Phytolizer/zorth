@@ -30,6 +30,8 @@ pub const Code = union(enum) {
 
     // Memory access.
     mem,
+    load,
+    store,
 
     // Control-flow.
     @"if": ?usize,

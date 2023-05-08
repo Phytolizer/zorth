@@ -69,6 +69,17 @@ pub fn compileProgram(
             .mem => {
                 try emit(&out, "push mem");
             },
+            .load => {
+                try emit(&out, "pop rax");
+                try emit(&out, "xor rbx, rbx");
+                try emit(&out, "mov bl, [rax]");
+                try emit(&out, "push rbx");
+            },
+            .store => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "mov [rax], bl");
+            },
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 try emit(&out, "pop rax");

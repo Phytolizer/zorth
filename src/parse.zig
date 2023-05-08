@@ -17,6 +17,8 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "-", .minus },
     .{ "dump", .dump },
     .{ "mem", .mem },
+    .{ ",", .load },
+    .{ ".", .store },
     .{ "=", .equal },
     .{ ">", .gt },
     .{ "if", .{ .@"if" = null } },
@@ -123,6 +125,8 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .gt,
             .dump,
             .mem,
+            .load,
+            .store,
             .dup,
             => {},
         }

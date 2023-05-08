@@ -47,7 +47,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 try stdout.print("{d}\n", .{x});
                 ip += 1;
             },
-            .mem => @panic("UNIMPLEMENTED"),
+            .mem, .load, .store => @panic("UNIMPLEMENTED"),
             .@"if", .do => |maybe_targ| {
                 const targ = maybe_targ.?;
                 const x = stack.pop();
