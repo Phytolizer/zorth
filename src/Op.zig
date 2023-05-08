@@ -60,6 +60,7 @@ pub const Code = union(enum) {
     dup2,
     swap,
     drop,
+    over,
 
     pub const Tag = std.meta.Tag(@This());
     const Self = @This();

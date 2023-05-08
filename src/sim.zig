@@ -148,6 +148,12 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 _ = stack.pop();
                 ip += 1;
             },
+            .over => {
+                const b = stack.pop();
+                const a = stack.pop();
+                try stack.appendSlice(&.{ a, b, a });
+                ip += 1;
+            },
         }
     }
 }
