@@ -10,7 +10,8 @@ fn usage(out: anytype, program: []const u8) void {
         \\Usage: {s} <SUBCOMMAND> [ARGS]
         \\SUBCOMMANDS:
         \\  sim <file>              Simulate the program
-        \\  com <file>              Compile the program
+        \\  com [-r] <file>         Compile the program
+        \\  help                    Show this help
         \\
     , .{program}) catch {};
 }
@@ -53,7 +54,17 @@ fn run() !void {
         defer gpa.free(program);
         try sim.simulateProgram(gpa, program);
     } else if (std.mem.eql(u8, subcommand, "com")) {
-        const file_path = shift(&argp) orelse {
+        var run_flag = false;
+        var file_path_arg: ?[]const u8 = null;
+        while (shift(&argp)) |arg| {
+            if (std.mem.eql(u8, arg, "-r")) {
+                run_flag = true;
+            } else {
+                file_path_arg = arg;
+                break;
+            }
+        }
+        const file_path = file_path_arg orelse {
             usage(stderr, program_name);
             std.debug.print("ERROR: no input file\n", .{});
             return error.Usage;
@@ -71,6 +82,8 @@ fn run() !void {
         const obj_path = try std.fmt.allocPrint(gpa, "{s}.o", .{basename});
         defer gpa.free(obj_path);
         try cmd.callCmd(gpa, &.{ "ld", "-o", basename, obj_path });
+        if (run_flag)
+            try cmd.callCmd(gpa, &.{basename});
     } else if (std.mem.eql(u8, subcommand, "help")) {
         usage(stdout, program_name);
     } else {
