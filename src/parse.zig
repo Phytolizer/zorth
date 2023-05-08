@@ -27,12 +27,14 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "syscall6", .syscall6 },
     .{ "=", .equal },
     .{ ">", .gt },
+    .{ "<", .lt },
     .{ "if", .{ .@"if" = null } },
     .{ "else", .{ .@"else" = null } },
     .{ "while", .@"while" },
     .{ "do", .{ .do = null } },
     .{ "end", .{ .end = null } },
     .{ "dup", .dup },
+    .{ "2dup", .dup2 },
 });
 
 fn parseTokenAsOp(token: Token) ParseError!Op {
@@ -129,6 +131,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .minus,
             .equal,
             .gt,
+            .lt,
             .dump,
             .mem,
             .load,
@@ -140,6 +143,7 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .syscall5,
             .syscall6,
             .dup,
+            .dup2,
             => {},
         }
     }

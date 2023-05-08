@@ -62,6 +62,14 @@ pub fn compileProgram(
                 try emit(&out, "setg al");
                 try emit(&out, "push rax");
             },
+            .lt => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "cmp rax, rbx");
+                try emit(&out, "movzx rax, al");
+                try emit(&out, "setl al");
+                try emit(&out, "push rax");
+            },
             .dump => {
                 try emit(&out, "pop rdi");
                 try emit(&out, "call dump");
@@ -145,6 +153,14 @@ pub fn compileProgram(
                 try emit(&out, "pop rax");
                 try emit(&out, "push rax");
                 try emit(&out, "push rax");
+            },
+            .dup2 => {
+                try emit(&out, "pop rbx");
+                try emit(&out, "pop rax");
+                try emit(&out, "push rax");
+                try emit(&out, "push rbx");
+                try emit(&out, "push rax");
+                try emit(&out, "push rbx");
             },
         }
     }

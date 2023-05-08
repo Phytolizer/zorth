@@ -44,6 +44,10 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 binaryOp(&stack, math.gt);
                 ip += 1;
             },
+            .lt => {
+                binaryOp(&stack, math.lt);
+                ip += 1;
+            },
             .dump => {
                 const x = stack.pop();
                 try stdout.print("{d}\n", .{x});
@@ -110,6 +114,12 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
             .dup => {
                 const x = stack.pop();
                 try stack.appendSlice(&.{ x, x });
+                ip += 1;
+            },
+            .dup2 => {
+                const b = stack.pop();
+                const a = stack.pop();
+                try stack.appendSlice(&.{ a, b, a, b });
                 ip += 1;
             },
         }

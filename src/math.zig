@@ -13,3 +13,7 @@ pub fn equal(comptime T: type, x: T, y: T) T {
 pub fn gt(comptime T: type, x: T, y: T) T {
     return @boolToInt(x > y);
 }
+
+pub fn lt(comptime T: type, x: T, y: T) T {
+    return @boolToInt(x < y);
+}

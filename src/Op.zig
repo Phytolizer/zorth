@@ -24,6 +24,7 @@ pub const Code = union(enum) {
     minus,
     equal,
     gt,
+    lt,
 
     // I/O.
     dump,
@@ -50,6 +51,7 @@ pub const Code = union(enum) {
 
     // Stack.
     dup,
+    dup2,
 
     pub const Tag = std.meta.Tag(@This());
     const Self = @This();
