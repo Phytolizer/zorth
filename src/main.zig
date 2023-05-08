@@ -65,6 +65,7 @@ fn run() !void {
         const basename = file_path[0..basename_len];
         const asm_path = try std.fmt.allocPrint(gpa, "{s}.asm", .{basename});
         defer gpa.free(asm_path);
+        std.debug.print("[INFO] Generating {s}\n", .{asm_path});
         try com.compileProgram(program, asm_path);
         try cmd.callCmd(gpa, &.{ "nasm", "-felf64", asm_path });
         const obj_path = try std.fmt.allocPrint(gpa, "{s}.o", .{basename});
