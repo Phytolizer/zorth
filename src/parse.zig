@@ -20,7 +20,7 @@ fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
         .{ .word = try gpa.dupe(u8, word) };
 }
 
-fn parseEscapes(gpa: std.mem.Allocator, raw_text: []const u8) ![]const u8 {
+fn parseEscapes(gpa: std.mem.Allocator, loc: Op.Location, raw_text: []const u8) ![]const u8 {
     var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
 
     var offset: usize = 0;
@@ -37,7 +37,17 @@ fn parseEscapes(gpa: std.mem.Allocator, raw_text: []const u8) ![]const u8 {
                 const len = std.unicode.utf8Encode(cp, &utf8_buf) catch unreachable;
                 try token_text.appendSlice(utf8_buf[0..len]);
             },
-            .failure => |e| std.debug.panic("error: {any}\n", .{e}),
+            .failure => |e| {
+                const err_loc = Op.Location{
+                    .file_path = loc.file_path,
+                    .row = loc.row,
+                    .col = loc.col + switch (e) {
+                        inline else => |i| i,
+                    },
+                };
+                std.debug.print("{}: ERROR: could not parse escape sequence\n", .{err_loc});
+                return error.Parse;
+            },
         }
     }
     return try token_text.toOwnedSlice();
@@ -66,7 +76,7 @@ fn lexLine(
                 };
                 try tokens.append(.{
                     .loc = loc,
-                    .value = .{ .str = try parseEscapes(gpa, line[col + 1 .. col_end]) },
+                    .value = .{ .str = try parseEscapes(gpa, loc, line[col + 1 .. col_end]) },
                 });
                 it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
             },
@@ -76,7 +86,7 @@ fn lexLine(
                     return error.Parse;
                 };
                 const raw_text = line[col + 1 .. col_end];
-                const utf8 = try parseEscapes(gpa, raw_text);
+                const utf8 = try parseEscapes(gpa, loc, raw_text);
                 if (utf8.len == 0) {
                     std.debug.print(
                         "{}: ERROR: invalid character literal '{s}': no data\n",
