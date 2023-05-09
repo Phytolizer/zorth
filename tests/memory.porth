@@ -1,12 +1,12 @@
 include "std.porth"
 
-// write "abc"
+// stdout write "abc"
 mem 0 + 97 .
 mem 1 + 98 .
 mem 2 + 99 .
 mem 3 + 10 .
 
-4 mem write print
+4 mem stdout write print
 
 // increment chars
 mem 0 + dup , 1 + .
@@ -14,4 +14,4 @@ mem 1 + dup , 1 + .
 mem 2 + dup , 1 + .
 
 // mem is now "bcd"
-4 mem write print
+4 mem stdout write print

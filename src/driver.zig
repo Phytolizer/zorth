@@ -18,6 +18,7 @@ fn usage(out: anytype, program: []const u8) void {
         \\  OPTIONS:
         \\    -r                    Run program after compilation
         \\    -o <file|dir>         Set the output path
+        \\    -s                    Silent mode; don't print log messages
         \\  help                    Show this help
         \\
     , .{program}) catch {};
@@ -79,11 +80,14 @@ pub fn run(
         try sim.simulateProgram(gpa, program.items, stdout);
     } else if (std.mem.eql(u8, subcommand, "com")) {
         var run_flag = false;
+        var silent_flag = false;
         var file_path_arg: ?[]const u8 = null;
         var out_path_arg: ?[]const u8 = null;
         while (shift(&argp)) |arg| {
             if (std.mem.eql(u8, arg, "-r")) {
                 run_flag = true;
+            } else if (std.mem.eql(u8, arg, "-s")) {
+                silent_flag = true;
             } else if (std.mem.eql(u8, arg, "-o")) {
                 out_path_arg = shift(&argp) orelse {
                     usage(stderr, program_name);
@@ -124,18 +128,19 @@ pub fn run(
         defer if (basename_alloc) gpa.free(basename);
         const asm_path = try std.fmt.allocPrint(gpa, "{s}.asm", .{basename});
         defer gpa.free(asm_path);
-        std.debug.print("[INFO] Generating {s}\n", .{asm_path});
+        if (!silent_flag)
+            std.debug.print("[INFO] Generating {s}\n", .{asm_path});
         try com.compileProgram(gpa, program.items, asm_path);
-        try cmd.callCmd(gpa, &.{ "nasm", "-felf64", asm_path });
+        try cmd.callCmd(gpa, &.{ "nasm", "-felf64", asm_path }, .{ .silent = silent_flag });
         const obj_path = try std.fmt.allocPrint(gpa, "{s}.o", .{basename});
         defer gpa.free(obj_path);
-        try cmd.callCmd(gpa, &.{ "ld", "-o", basename, obj_path });
+        try cmd.callCmd(gpa, &.{ "ld", "-o", basename, obj_path }, .{ .silent = silent_flag });
         if (run_flag) {
             const relpath = try path.join(gpa, &.{ ".", basename });
             defer gpa.free(relpath);
             const run_args = try std.mem.concat(gpa, []const u8, &.{ &.{relpath}, argp });
             defer gpa.free(run_args);
-            return try cmd.captureCmd(gpa, run_args, stdout);
+            return try cmd.captureCmd(gpa, run_args, stdout, .{ .silent = silent_flag });
         }
     } else if (std.mem.eql(u8, subcommand, "help")) {
         usage(stdout, program_name);

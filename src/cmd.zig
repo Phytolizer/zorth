@@ -57,15 +57,30 @@ pub const CaptureError = std.ChildProcess.ExecError ||
     error{Crash};
 pub const CallError = CaptureError || error{ExitStatus};
 
-pub fn callCmd(gpa: std.mem.Allocator, cmd: []const []const u8) CallError!void {
-    const code = try captureCmd(gpa, cmd, std.io.getStdOut());
+pub const CallArgs = struct {
+    silent: bool = false,
+};
+
+pub fn callCmd(
+    gpa: std.mem.Allocator,
+    cmd: []const []const u8,
+    args: CallArgs,
+) CallError!void {
+    const code = try captureCmd(gpa, cmd, std.io.getStdOut(), args);
     if (code != 0) return error.ExitStatus;
 }
 
-pub fn captureCmd(gpa: std.mem.Allocator, cmd: []const []const u8, stdout: anytype) CaptureError!u8 {
-    std.debug.print("[CMD]", .{});
-    printQuoted(cmd);
-    std.debug.print("\n", .{});
+pub fn captureCmd(
+    gpa: std.mem.Allocator,
+    cmd: []const []const u8,
+    stdout: anytype,
+    args: CallArgs,
+) CaptureError!u8 {
+    if (!args.silent) {
+        std.debug.print("[CMD]", .{});
+        printQuoted(cmd);
+        std.debug.print("\n", .{});
+    }
 
     var proc = std.ChildProcess.init(cmd, gpa);
     proc.stdout_behavior = .Pipe;

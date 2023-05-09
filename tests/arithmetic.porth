@@ -3,22 +3,22 @@ include "std.porth"
 // add
 34 35 + print
 
-"------------------------------\n" write
+"------------------------------\n" stdout write
 
 // subtract
 500 80 - print
 
-"------------------------------\n" write
+"------------------------------\n" stdout write
 
 // multiply
 42 10 * print
 
-"------------------------------\n" write
+"------------------------------\n" stdout write
 
 // divide
 69000 1000 / print
 
-"------------------------------\n" write
+"------------------------------\n" stdout write
 
 // modulo
 5 100 mod print
