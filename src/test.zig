@@ -4,7 +4,7 @@ const shift = @import("porth-args").shift;
 const driver = @import("porth-driver");
 const path_mod = @import("porth-path");
 
-const TestError = error{ SimFail, ComFail, TestFail } ||
+const TestError = error{ SimFail, ComFail, BothFail, TestFail } ||
     std.mem.Allocator.Error ||
     std.ChildProcess.SpawnError ||
     driver.Error ||
@@ -41,6 +41,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
     };
     defer gpa.free(expected);
 
+    var sim_fail = false;
     if (!std.mem.eql(u8, sim_out_buf.items, expected)) {
         std.debug.print(
             \\[ERROR] Unexpected simulation output
@@ -50,7 +51,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
             \\    {s}
             \\
         , .{ expected, sim_out_buf.items });
-        return error.SimFail;
+        sim_fail = true;
     }
     var com_out_buf = std.ArrayList(u8).init(gpa);
     defer com_out_buf.deinit();
@@ -70,8 +71,9 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
             \\    {s}
             \\
         , .{ expected, com_out_buf.items });
-        return error.ComFail;
+        return if (sim_fail) error.BothFail else error.ComFail;
     }
+    if (sim_fail) return error.SimFail;
 }
 
 fn record(gpa: std.mem.Allocator, path: []const u8) TestError!void {
