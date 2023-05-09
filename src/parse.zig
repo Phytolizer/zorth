@@ -299,7 +299,10 @@ fn compile(
                         },
                     };
                     if (Intrinsic.names.get(name) != null) {
-                        std.debug.print("{}: ERROR: redefinition of builtin word '{s}'\n", .{ name_tok.loc, name });
+                        std.debug.print(
+                            "{}: ERROR: redefinition of intrinsic '{s}'. Please choose a different macro name.\n",
+                            .{ name_tok.loc, name },
+                        );
                         return error.Sema;
                     }
                     if (try macros.fetchPut(name, Macro.init(token.loc, arena))) |old| {
