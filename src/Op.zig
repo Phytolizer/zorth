@@ -1,4 +1,5 @@
 const std = @import("std");
+const Keyword = @import("keyword.zig").Keyword;
 
 loc: Location,
 code: Code,
@@ -65,8 +66,7 @@ pub const Code = union(enum) {
     end: ?usize,
 
     // Compile-time.
-    macro,
-    include,
+    keyword: Keyword,
 
     // Stack.
     dup,
@@ -95,12 +95,6 @@ pub const Code = union(enum) {
                     try out.writeAll(" -> NOTHING!!!");
                 }
             },
-
-            .macro => std.debug.panic(
-                "found '{s}' during execution; this is a compile-time word",
-                .{@tagName(self)},
-            ),
-
             else => {
                 const name = @tagName(self);
                 try out.writeAll(name);

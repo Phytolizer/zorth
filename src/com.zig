@@ -38,6 +38,7 @@ pub fn compileProgram(
         try op.code.display(out);
         try out.writeAll(" --\n");
         switch (op.code) {
+            .keyword => unreachable,
             .push_int => |x| {
                 try emitf(&out, "mov rax, {d}", .{x});
                 try emit(&out, "push rax");
@@ -235,7 +236,6 @@ pub fn compileProgram(
                 const targ = maybe_targ.?;
                 try emitf(&out, "jmp " ++ porth_addr_prefix ++ "{d}", .{targ});
             },
-            .macro, .include => unreachable,
             .end => |maybe_targ| {
                 const targ = maybe_targ.?;
                 if (targ != ip + 1)

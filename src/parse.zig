@@ -1,55 +1,14 @@
 const std = @import("std");
 const Op = @import("Op.zig");
 const Program = @import("Program.zig");
+const Token = @import("Token.zig");
+const Keyword = @import("keyword.zig").Keyword;
 
 const ParseError = error{Parse};
 
 fn streq(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
-
-const Token = struct {
-    loc: Op.Location,
-    value: Value,
-
-    const Value = union(enum) {
-        word: []const u8,
-        int: u63,
-        str: []const u8,
-        // for UTF8 support
-        character: u21,
-
-        pub const Tag = std.meta.Tag(@This());
-        pub fn tagReadableName(tag: Tag) []const u8 {
-            return switch (tag) {
-                .word => "a word",
-                .int => "an integer",
-                .str => "a string",
-                .character => "a character",
-            };
-        }
-        pub fn humanReadableName(self: @This()) []const u8 {
-            return tagReadableName(std.meta.activeTag(self));
-        }
-
-        pub fn format(
-            self: @This(),
-            comptime _: []const u8,
-            _: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            switch (self) {
-                .word, .str => |w| try writer.print("'{s}'", .{w}),
-                .int => |x| try writer.print("'{d}'", .{x}),
-                .character => |c| {
-                    var buf: [4]u8 = undefined;
-                    const len = std.unicode.utf8Encode(c, &buf) catch unreachable;
-                    try writer.print("'{s}'", .{buf[0..len]});
-                },
-            }
-        }
-    };
-};
 
 const builtin_words = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .plus },
@@ -77,13 +36,6 @@ const builtin_words = std.ComptimeStringMap(Op.Code, .{
     .{ ">=", .ge },
     .{ "<=", .le },
     .{ "!=", .ne },
-    .{ "if", .{ .@"if" = null } },
-    .{ "else", .{ .@"else" = null } },
-    .{ "while", .@"while" },
-    .{ "do", .{ .do = null } },
-    .{ "end", .{ .end = null } },
-    .{ "macro", .macro },
-    .{ "include", .include },
     .{ "dup", .dup },
     .{ "swap", .swap },
     .{ "drop", .drop },
@@ -93,7 +45,9 @@ const builtin_words = std.ComptimeStringMap(Op.Code, .{
 fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
     return if (std.fmt.parseInt(u63, word, 10)) |int|
         .{ .int = int }
-    else |_|
+    else |_| if (Keyword.names.get(word)) |kw|
+        .{ .keyword = kw }
+    else
         .{ .word = try gpa.dupe(u8, word) };
 }
 
@@ -263,210 +217,203 @@ fn compile(
 
     var ip: usize = 0;
     while (tokens.popOrNull()) |token| {
-        const op = switch (token.value) {
-            .word => |word| if (builtin_words.get(word)) |builtin|
-                Op.init(token.loc, builtin)
-            else if (macros.get(word)) |macro| {
-                const start = tokens.items.len;
-                try tokens.ensureTotalCapacity(start + macro.tokens.items.len);
-                for (macro.tokens.items) |src| {
-                    tokens.appendAssumeCapacity(src);
+        switch (token.value) {
+            .word => |word| {
+                if (builtin_words.get(word)) |builtin| {
+                    try program.append(Op.init(token.loc, builtin));
+                    ip += 1;
+                } else if (macros.get(word)) |macro| {
+                    const start = tokens.items.len;
+                    try tokens.ensureTotalCapacity(start + macro.tokens.items.len);
+                    for (macro.tokens.items) |src| {
+                        tokens.appendAssumeCapacity(src);
+                    }
+                    std.mem.reverse(Token, tokens.items[start..]);
+                } else {
+                    std.debug.print("{}: unknown word '{s}'\n", .{ token.loc, word });
+                    return error.Sema;
                 }
-                std.mem.reverse(Token, tokens.items[start..]);
-                continue;
-            } else {
-                std.debug.print("{}: unknown word '{s}'\n", .{ token.loc, word });
-                return error.Sema;
             },
-            .int => |value| Op{ .loc = token.loc, .code = .{ .push_int = value } },
-            .str => |value| blk: {
-                break :blk Op{
+            .int => |value| {
+                try program.append(Op{ .loc = token.loc, .code = .{ .push_int = value } });
+                ip += 1;
+            },
+            .str => |value| {
+                try program.append(Op{
                     .loc = token.loc,
                     .code = .{ .push_str = try gpa.dupe(u8, value) },
-                };
-            },
-            .character => |ch| Op{ .loc = token.loc, .code = .{ .push_int = ch } },
-        };
-
-        switch (op.code) {
-            .@"if", .@"while" => {
-                try program.append(op);
-                try stack.append(ip);
+                });
                 ip += 1;
             },
-            .@"else" => {
-                try program.append(op);
-                const if_ip = stack.pop();
-                switch (program.items[if_ip].code) {
-                    .@"if" => |*targ| {
-                        targ.* = ip + 1;
-                    },
-                    else => {
-                        std.debug.print("{}: ERROR: `else` can only be used in `if`-blocks\n", .{op.loc});
-                        return error.Sema;
-                    },
-                }
-                try stack.append(ip);
+            .character => |ch| {
+                try program.append(Op{ .loc = token.loc, .code = .{ .push_int = ch } });
                 ip += 1;
             },
-            .do => {
-                try program.append(op);
-                const while_ip = stack.pop();
-                program.items[ip].code.do = while_ip;
-                try stack.append(ip);
-                ip += 1;
-            },
-            .end => {
-                try program.append(op);
-                const block_ip = stack.pop();
-                switch (program.items[block_ip].code) {
-                    .@"if", .@"else" => |*targ| {
-                        targ.* = ip;
-                        program.items[ip].code.end = ip + 1;
-                    },
-                    .do => |*targ| {
-                        program.items[ip].code.end = targ.*;
-                        targ.* = ip + 1;
-                    },
-                    else => {
-                        std.debug.print("{}: ERROR: `end` can only close `if`-blocks\n", .{op.loc});
-                        return error.Sema;
-                    },
-                }
-                ip += 1;
-            },
-            .macro => {
-                const name_tok = tokens.popOrNull() orelse {
-                    std.debug.print("{}: ERROR: expected macro name but found end of input\n", .{op.loc});
-                    return error.Sema;
-                };
-                const name = switch (name_tok.value) {
-                    .word => |w| w,
-                    else => {
-                        std.debug.print(
-                            "{}: ERROR: expected macro name to be {s} but found {s}\n",
-                            .{
-                                name_tok.loc,
-                                Token.Value.tagReadableName(.word),
-                                name_tok.value.humanReadableName(),
-                            },
-                        );
-                        return error.Sema;
-                    },
-                };
-                if (builtin_words.get(name) != null) {
-                    std.debug.print("{}: ERROR: redefinition of builtin word '{s}'\n", .{ name_tok.loc, name });
-                    return error.Sema;
-                }
-                if (try macros.fetchPut(name, Macro.init(op.loc, arena))) |old| {
-                    std.debug.print(
-                        "{}: ERROR: redefinition of existing macro '{s}'\n",
-                        .{ name_tok.loc, old.key },
-                    );
-                    return error.Sema;
-                }
-                const macro = macros.getPtr(name).?;
-
-                var last_token: ?Token = null;
-                var was_end = false;
-                while (tokens.popOrNull()) |macro_tok| {
-                    last_token = macro_tok;
-                    switch (macro_tok.value) {
-                        .word => |w| if (std.mem.eql(u8, w, "end")) {
-                            was_end = true;
-                            break;
+            .keyword => |kw| switch (kw) {
+                .@"if" => {
+                    try program.append(Op{ .loc = token.loc, .code = .{ .@"if" = null } });
+                    try stack.append(ip);
+                    ip += 1;
+                },
+                .@"else" => {
+                    try program.append(Op{ .loc = token.loc, .code = .{ .@"else" = null } });
+                    const if_ip = stack.pop();
+                    switch (program.items[if_ip].code) {
+                        .@"if" => |*targ| {
+                            targ.* = ip + 1;
                         },
-                        else => {},
+                        else => {
+                            std.debug.print(
+                                "{}: ERROR: `else` can only be used in `if`-blocks\n",
+                                .{token.loc},
+                            );
+                            return error.Sema;
+                        },
                     }
-                    try macro.tokens.append(macro_tok);
-                }
-                if (!was_end) {
-                    std.debug.print("{}: ERROR: expected 'end' at end of macro definition, got ", .{token.loc});
-                    if (last_token) |t| {
-                        std.debug.print("{}\n", .{t.value});
-                    } else {
-                        std.debug.print("end of input\n", .{});
+                    try stack.append(ip);
+                    ip += 1;
+                },
+                .@"while" => {
+                    try program.append(Op{ .loc = token.loc, .code = .@"while" });
+                    try stack.append(ip);
+                    ip += 1;
+                },
+                .do => {
+                    try program.append(Op{ .loc = token.loc, .code = .{ .do = null } });
+                    const while_ip = stack.pop();
+                    program.items[ip].code.do = while_ip;
+                    try stack.append(ip);
+                    ip += 1;
+                },
+                .end => {
+                    try program.append(Op{ .loc = token.loc, .code = .{ .end = null } });
+                    const block_ip = stack.pop();
+                    switch (program.items[block_ip].code) {
+                        .@"if", .@"else" => |*targ| {
+                            targ.* = ip;
+                            program.items[ip].code.end = ip + 1;
+                        },
+                        .do => |*targ| {
+                            program.items[ip].code.end = targ.*;
+                            targ.* = ip + 1;
+                        },
+                        else => {
+                            std.debug.print(
+                                "{}: ERROR: `end` can only close `if`-blocks\n",
+                                .{token.loc},
+                            );
+                            return error.Sema;
+                        },
                     }
-                    return error.Sema;
-                }
-            },
-            .include => {
-                const path_tok = tokens.popOrNull() orelse {
-                    std.debug.print("{}: ERROR: expected include path but found end of input\n", .{op.loc});
-                    return error.Sema;
-                };
-                const path = switch (path_tok.value) {
-                    .str => |s| s,
-                    else => {
+                    ip += 1;
+                },
+                .macro => {
+                    const name_tok = tokens.popOrNull() orelse {
                         std.debug.print(
-                            "{}: ERROR: expected include path to be {s} but found {s}\n",
-                            .{
-                                path_tok.loc,
-                                Token.Value.tagReadableName(.word),
-                                path_tok.value.humanReadableName(),
-                            },
+                            "{}: ERROR: expected macro name but found end of input\n",
+                            .{token.loc},
                         );
                         return error.Sema;
-                    },
-                };
-                var include_file = doInclude: {
-                    if (std.fs.path.isAbsolute(path)) {
-                        if (std.fs.openFileAbsolute(path, .{})) |f|
-                            break :doInclude f
-                        else |_| {}
-                    } else for (include_paths) |include_path| {
-                        const full_path = try std.fs.path.join(arena, &.{ include_path, path });
-                        if (std.fs.cwd().openFile(full_path, .{})) |f| {
-                            const stat = try f.stat();
-                            if (stat.kind != .File) continue;
-                            break :doInclude f;
-                        } else |_| continue;
+                    };
+                    const name = switch (name_tok.value) {
+                        .word => |w| w,
+                        else => {
+                            std.debug.print(
+                                "{}: ERROR: expected macro name to be {s} but found {s}\n",
+                                .{
+                                    name_tok.loc,
+                                    Token.Value.tagReadableName(.word),
+                                    name_tok.value.humanReadableName(),
+                                },
+                            );
+                            return error.Sema;
+                        },
+                    };
+                    if (builtin_words.get(name) != null) {
+                        std.debug.print("{}: ERROR: redefinition of builtin word '{s}'\n", .{ name_tok.loc, name });
+                        return error.Sema;
                     }
-                    std.debug.print(
-                        "{}: ERROR: file '{s}' could not be opened\n",
-                        .{ path_tok.loc, path },
-                    );
-                    return error.Sema;
-                };
-                defer include_file.close();
-                const included_tokens = try parse(arena, include_file.reader(), path);
-                std.mem.reverse(Token, included_tokens.items);
-                try tokens.appendSlice(included_tokens.items);
-            },
-            .push_int,
-            .push_str,
-            .plus,
-            .minus,
-            .mul,
-            .divmod,
-            .eq,
-            .gt,
-            .lt,
-            .ge,
-            .le,
-            .ne,
-            .shr,
-            .shl,
-            .bor,
-            .band,
-            .print,
-            .mem,
-            .load,
-            .store,
-            .syscall0,
-            .syscall1,
-            .syscall2,
-            .syscall3,
-            .syscall4,
-            .syscall5,
-            .syscall6,
-            .dup,
-            .swap,
-            .drop,
-            .over,
-            => {
-                try program.append(op);
-                ip += 1;
+                    if (try macros.fetchPut(name, Macro.init(token.loc, arena))) |old| {
+                        std.debug.print(
+                            "{}: ERROR: redefinition of existing macro '{s}'\n",
+                            .{ name_tok.loc, old.key },
+                        );
+                        return error.Sema;
+                    }
+                    const macro = macros.getPtr(name).?;
+
+                    var last_token: ?Token = null;
+                    var was_end = false;
+                    while (tokens.popOrNull()) |macro_tok| {
+                        last_token = macro_tok;
+                        switch (macro_tok.value) {
+                            .keyword => |k| if (k == .end) {
+                                was_end = true;
+                                break;
+                            },
+                            else => {},
+                        }
+                        try macro.tokens.append(macro_tok);
+                    }
+                    if (!was_end) {
+                        std.debug.print(
+                            "{}: ERROR: expected 'end' at end of macro definition, got ",
+                            .{token.loc},
+                        );
+                        if (last_token) |t| {
+                            std.debug.print("{}\n", .{t.value});
+                        } else {
+                            std.debug.print("end of input\n", .{});
+                        }
+                        return error.Sema;
+                    }
+                },
+                .include => {
+                    const path_tok = tokens.popOrNull() orelse {
+                        std.debug.print(
+                            "{}: ERROR: expected include path but found end of input\n",
+                            .{token.loc},
+                        );
+                        return error.Sema;
+                    };
+                    const path = switch (path_tok.value) {
+                        .str => |s| s,
+                        else => {
+                            std.debug.print(
+                                "{}: ERROR: expected include path to be {s} but found {s}\n",
+                                .{
+                                    path_tok.loc,
+                                    Token.Value.tagReadableName(.word),
+                                    path_tok.value.humanReadableName(),
+                                },
+                            );
+                            return error.Sema;
+                        },
+                    };
+                    var include_file = doInclude: {
+                        if (std.fs.path.isAbsolute(path)) {
+                            if (std.fs.openFileAbsolute(path, .{})) |f|
+                                break :doInclude f
+                            else |_| {}
+                        } else for (include_paths) |include_path| {
+                            const full_path = try std.fs.path.join(arena, &.{ include_path, path });
+                            if (std.fs.cwd().openFile(full_path, .{})) |f| {
+                                const stat = try f.stat();
+                                if (stat.kind != .File) continue;
+                                break :doInclude f;
+                            } else |_| continue;
+                        }
+                        std.debug.print(
+                            "{}: ERROR: file '{s}' could not be opened\n",
+                            .{ path_tok.loc, path },
+                        );
+                        return error.Sema;
+                    };
+                    defer include_file.close();
+                    const included_tokens = try parse(arena, include_file.reader(), path);
+                    std.mem.reverse(Token, included_tokens.items);
+                    try tokens.appendSlice(included_tokens.items);
+                },
             },
         }
     }

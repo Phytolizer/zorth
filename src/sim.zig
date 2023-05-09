@@ -30,6 +30,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
     while (ip < program.len) {
         const op = &program[ip];
         switch (op.code) {
+            .keyword => unreachable,
             .push_int => |x| {
                 try stack.append(x);
                 ip += 1;
@@ -183,7 +184,6 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 const targ = maybe_targ.?;
                 ip = targ;
             },
-            .macro, .include => unreachable,
             .dup => {
                 const x = stack.pop();
                 try stack.appendSlice(&.{ x, x });
