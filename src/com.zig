@@ -43,14 +43,14 @@ pub fn compileProgram(
                 try emit(&out, "push rax");
             },
             .push_str => |x| {
-                try emitf(&out, "mov rax, {d}", .{x.value.len});
+                try emitf(&out, "mov rax, {d}", .{x.len});
                 try emit(&out, "push rax");
                 try emitf(
                     &out,
                     "push " ++ porth_str_prefix ++ "{d}",
                     .{strs.items.len},
                 );
-                try strs.append(x.value);
+                try strs.append(x);
             },
             .plus => {
                 try emit(&out, "pop rbx");

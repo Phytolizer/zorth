@@ -11,7 +11,7 @@ fn binaryOp(
     stack.appendAssumeCapacity(op(i64, a, b));
 }
 
-pub fn simulateProgram(gpa: std.mem.Allocator, program: []Op, raw_stdout: anytype) !void {
+pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: anytype) !void {
     var stack = std.ArrayList(i64).init(gpa);
     defer stack.deinit();
     var stdout_buf = std.io.bufferedWriter(raw_stdout);
@@ -22,6 +22,8 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []Op, raw_stdout: anytyp
     defer gpa.free(mem);
     @memset(mem, 0);
 
+    var str_offsets = std.AutoArrayHashMap(usize, usize).init(gpa);
+    defer str_offsets.deinit();
     var str_size: usize = 0;
 
     var ip: usize = 0;
@@ -32,12 +34,12 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []Op, raw_stdout: anytyp
                 try stack.append(x);
                 ip += 1;
             },
-            .push_str => |*x| {
-                const s = x.value;
+            .push_str => |x| {
+                const s = x;
                 try stack.append(@intCast(i64, s.len));
-                const addr = x.addr orelse blk: {
+                const addr = str_offsets.get(ip) orelse blk: {
                     const addr = str_size;
-                    x.addr = addr;
+                    try str_offsets.put(ip, str_size);
                     for (s, mem[str_size .. str_size + s.len]) |src, *dst|
                         dst.* = src;
                     str_size += s.len;

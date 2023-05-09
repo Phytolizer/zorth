@@ -76,7 +76,7 @@ fn parseTokenAsOp(token: *Token) ParseError!Op {
             std.mem.swap([]const u8, s, &temp);
             return .{
                 .loc = token.loc,
-                .code = .{ .push_str = .{ .value = temp } },
+                .code = .{ .push_str = temp },
             };
         },
     };

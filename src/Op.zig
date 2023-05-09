@@ -19,7 +19,7 @@ pub const Location = struct {
 
 pub const Code = union(enum) {
     push_int: u63,
-    push_str: Str,
+    push_str: []const u8,
     // Simple.
     plus,
     minus,
@@ -71,15 +71,10 @@ pub const Code = union(enum) {
     pub const Tag = std.meta.Tag(@This());
     const Self = @This();
 
-    pub const Str = struct {
-        value: []const u8,
-        addr: ?usize = null,
-    };
-
     pub fn display(self: Self, out: anytype) !void {
         switch (self) {
             .push_int => |x| try out.print("push int {d}", .{x}),
-            .push_str => |x| try out.print("push str '{'}'", .{std.zig.fmtEscapes(x.value)}),
+            .push_str => |x| try out.print("push str '{'}'", .{std.zig.fmtEscapes(x)}),
 
             .@"if",
             .@"else",
