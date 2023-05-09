@@ -255,6 +255,7 @@ fn compile(
             .@"if", .@"while" => {
                 try program.append(op);
                 try stack.append(ip);
+                ip += 1;
             },
             .@"else" => {
                 try program.append(op);
@@ -269,12 +270,14 @@ fn compile(
                     },
                 }
                 try stack.append(ip);
+                ip += 1;
             },
             .do => {
                 try program.append(op);
                 const while_ip = stack.pop();
                 program.items[ip].code.do = while_ip;
                 try stack.append(ip);
+                ip += 1;
             },
             .end => {
                 try program.append(op);
@@ -293,6 +296,7 @@ fn compile(
                         return error.Sema;
                     },
                 }
+                ip += 1;
             },
             .macro => {
                 const name_tok = tokens.popOrNull() orelse {
@@ -385,10 +389,9 @@ fn compile(
             .over,
             => {
                 try program.append(op);
+                ip += 1;
             },
         }
-
-        ip += 1;
     }
 
     if (stack.items.len > 0) {
