@@ -111,10 +111,14 @@ fn lexLine(
                 });
                 it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
             },
-            else => try tokens.append(.{
-                .loc = loc,
-                .value = try lexWord(gpa, word),
-            }),
+            else => {
+                if (std.mem.startsWith(u8, word, "//")) {
+                    break;
+                } else try tokens.append(.{
+                    .loc = loc,
+                    .value = try lexWord(gpa, word),
+                });
+            },
         }
     }
 }
@@ -140,8 +144,7 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
     }
     var row: usize = 0;
     while (try readLine(in, &line_buf)) |line| : (row += 1) {
-        const before_comment = line[0 .. std.mem.indexOf(u8, line, "//") orelse line.len];
-        try lexLine(gpa, &tokens, file_path, row, before_comment);
+        try lexLine(gpa, &tokens, file_path, row, line);
     }
     return tokens;
 }

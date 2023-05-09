@@ -1,0 +1,8 @@
+include "std.porth"
+
+//comment 1
+// comment 2
+/////////long comment
+
+// string literal with '//' should be shown
+"Hello, // World\n" stdout write // this comment is still a comment
