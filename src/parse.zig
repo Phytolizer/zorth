@@ -100,8 +100,14 @@ fn lexLine(
     while (it.next()) |word| {
         const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
         if (word[0] == '"') {
-            const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '"') orelse
-                std.debug.panic("no close quote found", .{});
+            const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '"') orelse {
+                std.debug.print("{}: ERROR: unclosed string literal\n", .{Op.Location{
+                    .file_path = file_path,
+                    .row = row + 1,
+                    .col = col + 1,
+                }});
+                return error.Parse;
+            };
             const raw_text = line[col + 1 .. col_end];
             var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
             defer token_text.deinit();
