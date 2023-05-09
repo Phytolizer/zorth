@@ -5,7 +5,8 @@
 "------------------------------\n" 1 1 syscall3
 
 // push str
-"Hello, World\n" 1 1 syscall3
+"Hello, World\n" 1 1 syscall3 // ASCII
+"Привет, Мир!\n" 1 1 syscall3 // UTF-8
 
 "------------------------------\n" 1 1 syscall3
 
