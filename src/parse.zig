@@ -18,10 +18,20 @@ const Token = struct {
         str: []const u8,
 
         pub const Tag = std.meta.Tag(@This());
+        pub fn tagReadableName(tag: Tag) []const u8 {
+            return switch (tag) {
+                .word => "word",
+                .int => "integer",
+                .str => "string",
+            };
+        }
+        pub fn humanReadableName(self: @This()) []const u8 {
+            return tagReadableName(std.meta.activeTag(self));
+        }
     };
 };
 
-const word_map = std.ComptimeStringMap(Op.Code, .{
+const builtin_words = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .plus },
     .{ "-", .minus },
     .{ "mod", .mod },
@@ -51,6 +61,7 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "while", .@"while" },
     .{ "do", .{ .do = null } },
     .{ "end", .{ .end = null } },
+    .{ "macro", .macro },
     .{ "dup", .dup },
     .{ "2dup", .dup2 },
     .{ "swap", .swap },
@@ -66,7 +77,7 @@ fn parseTokenAsOp(token: *Token) ParseError!Op {
         },
         .word => |w| .{
             .loc = token.loc,
-            .code = word_map.get(w) orelse {
+            .code = builtin_words.get(w) orelse {
                 std.debug.print("{}: unknown word {s}\n", .{ token.loc, w });
                 return error.Parse;
             },
@@ -158,11 +169,11 @@ fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
     return buf.items;
 }
 
-fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) ![]Op {
+fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) !std.ArrayList(Token) {
     var line_buf = std.ArrayList(u8).init(gpa);
     defer line_buf.deinit();
     var tokens = std.ArrayList(Token).init(gpa);
-    defer {
+    errdefer {
         for (tokens.items) |tok| switch (tok.value) {
             .str, .word => |s| gpa.free(s),
             else => {},
@@ -174,28 +185,81 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
         const before_comment = line[0 .. std.mem.indexOf(u8, line, "//") orelse line.len];
         try lexLine(gpa, &tokens, file_path, row, before_comment);
     }
-    var program = try std.ArrayList(Op).initCapacity(gpa, tokens.items.len);
-    defer program.deinit();
-    for (tokens.items) |*tok| {
-        program.appendAssumeCapacity(try parseTokenAsOp(tok));
-    }
-    return try program.toOwnedSlice();
+    return tokens;
 }
+
+const Macro = struct {
+    loc: Op.Location,
+    gpa: std.mem.Allocator,
+    tokens: std.ArrayList(Token),
+
+    pub fn init(loc: Op.Location, gpa: std.mem.Allocator) @This() {
+        return .{
+            .loc = loc,
+            .gpa = gpa,
+            .tokens = std.ArrayList(Token).init(gpa),
+        };
+    }
+};
 
 const SemaError = error{Sema} || std.mem.Allocator.Error;
 
-fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
-    var stack = std.ArrayList(usize).init(gpa);
+fn compile(
+    // persistent
+    gpa: std.mem.Allocator,
+    // ephemeral
+    arena: std.mem.Allocator,
+    tokens: *std.ArrayList(Token),
+) SemaError!Program {
+    var stack = std.ArrayList(usize).init(arena);
     defer stack.deinit();
+    std.mem.reverse(Token, tokens.items);
+    var macros = std.StringArrayHashMap(Macro).init(arena);
 
-    for (program, 0..) |*op, ip| {
+    var program = std.ArrayList(Op).init(gpa);
+    errdefer {
+        for (program.items) |op| switch (op.code) {
+            .push_str => |s| gpa.free(s),
+            else => {},
+        };
+        program.deinit();
+    }
+
+    var ip: usize = 0;
+    while (tokens.popOrNull()) |token| {
+        const op = switch (token.value) {
+            .word => |word| if (builtin_words.get(word)) |builtin|
+                Op.init(token.loc, builtin)
+            else if (macros.get(word)) |macro| {
+                const start = tokens.items.len;
+                try tokens.ensureTotalCapacity(start + macro.tokens.items.len);
+                for (macro.tokens.items) |src| {
+                    tokens.appendAssumeCapacity(src);
+                }
+                std.mem.reverse(Token, tokens.items[start..]);
+                continue;
+            } else {
+                std.debug.print("{}: unknown word '{s}'\n", .{ token.loc, word });
+                return error.Sema;
+            },
+            .int => |value| Op{ .loc = token.loc, .code = .{ .push_int = value } },
+            .str => |value| blk: {
+                break :blk Op{
+                    .loc = token.loc,
+                    .code = .{ .push_str = try gpa.dupe(u8, value) },
+                };
+            },
+        };
+
         switch (op.code) {
             .@"if", .@"while" => {
+                try program.append(op);
                 try stack.append(ip);
             },
             .@"else" => {
+                try program.append(op);
                 const if_ip = stack.pop();
-                switch (program[if_ip].code) {
+                switch (program.items[if_ip].code) {
                     .@"if" => |*targ| {
                         targ.* = ip + 1;
                     },
@@ -206,26 +270,86 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
                 }
                 try stack.append(ip);
             },
-            .do => |*targ| {
+            .do => {
+                try program.append(op);
                 const while_ip = stack.pop();
-                targ.* = while_ip;
+                program.items[ip].code.do = while_ip;
                 try stack.append(ip);
             },
-            .end => |*end_targ| {
+            .end => {
+                try program.append(op);
                 const block_ip = stack.pop();
-                switch (program[block_ip].code) {
+                switch (program.items[block_ip].code) {
                     .@"if", .@"else" => |*targ| {
                         targ.* = ip;
-                        end_targ.* = ip + 1;
+                        program.items[ip].code.end = ip + 1;
                     },
                     .do => |*targ| {
-                        end_targ.* = targ.*;
+                        program.items[ip].code.end = targ.*;
                         targ.* = ip + 1;
                     },
                     else => {
                         std.debug.print("{}: ERROR: `end` can only close `if`-blocks\n", .{op.loc});
                         return error.Sema;
                     },
+                }
+            },
+            .macro => {
+                const name_tok = tokens.popOrNull() orelse {
+                    std.debug.print("{}: ERROR: expected macro name but found end of input\n", .{op.loc});
+                    return error.Sema;
+                };
+                const name = switch (name_tok.value) {
+                    .word => |w| w,
+                    else => {
+                        std.debug.print(
+                            "{}: ERROR: expected macro name to be {s} but found {s}\n",
+                            .{
+                                name_tok.loc,
+                                Token.Value.tagReadableName(.word),
+                                name_tok.value.humanReadableName(),
+                            },
+                        );
+                        return error.Sema;
+                    },
+                };
+                if (builtin_words.get(name) != null) {
+                    std.debug.print("{}: ERROR: redefinition of builtin word '{s}'\n", .{ name_tok.loc, name });
+                    return error.Sema;
+                }
+                if (try macros.fetchPut(name, Macro.init(op.loc, arena))) |old| {
+                    std.debug.print(
+                        "{}: ERROR: redefinition of existing macro '{s}'\n",
+                        .{ name_tok.loc, old.key },
+                    );
+                    return error.Sema;
+                }
+                const macro = macros.getPtr(name).?;
+
+                var last_token: ?Token = null;
+                var was_end = false;
+                while (tokens.popOrNull()) |macro_tok| {
+                    last_token = macro_tok;
+                    switch (macro_tok.value) {
+                        .word => |w| if (std.mem.eql(u8, w, "end")) {
+                            was_end = true;
+                            break;
+                        },
+                        else => {},
+                    }
+                    try macro.tokens.append(macro_tok);
+                }
+                if (!was_end) {
+                    std.debug.print("{}: ERROR: expected 'end' at end of macro definition, got ", .{token.loc});
+                    if (last_token) |t| {
+                        switch (t.value) {
+                            .word, .str => |text| std.debug.print("'{s}'\n", .{text}),
+                            .int => |i| std.debug.print("'{d}'\n", .{i}),
+                        }
+                    } else {
+                        std.debug.print("end of input\n", .{});
+                    }
+                    return error.Sema;
                 }
             },
             .push_int,
@@ -259,14 +383,19 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
             .swap,
             .drop,
             .over,
-            => {},
+            => {
+                try program.append(op);
+            },
         }
+
+        ip += 1;
     }
 
     if (stack.items.len > 0) {
-        std.debug.print("{}: ERROR: unclosed block\n", .{program[stack.pop()].loc});
+        std.debug.print("{}: ERROR: unclosed block\n", .{program.items[stack.pop()].loc});
         return error.Sema;
     }
+    return Program.init(try program.toOwnedSlice());
 }
 
 pub const Error = SemaError ||
@@ -282,8 +411,8 @@ pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) Error!
     };
     defer f.close();
 
-    const program = Program.init(try parse(gpa, f.reader(), file_path));
-    errdefer program.deinit(gpa);
-    try crossReferenceBlocks(gpa, program.items);
-    return program;
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    var tokens = try parse(arena.allocator(), f.reader(), file_path);
+    return try compile(gpa, arena.allocator(), &tokens);
 }

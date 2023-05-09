@@ -176,6 +176,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 const targ = maybe_targ.?;
                 ip = targ;
             },
+            .macro => unreachable,
             .dup => {
                 const x = stack.pop();
                 try stack.appendSlice(&.{ x, x });

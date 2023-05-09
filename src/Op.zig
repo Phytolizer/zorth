@@ -60,6 +60,7 @@ pub const Code = union(enum) {
     @"while",
     do: ?usize,
     end: ?usize,
+    macro,
 
     // Stack.
     dup,
@@ -89,6 +90,11 @@ pub const Code = union(enum) {
                     try out.writeAll(" -> NOTHING!!!");
                 }
             },
+
+            .macro => std.debug.panic(
+                "found '{s}' during execution; this is a compile-time word",
+                .{@tagName(self)},
+            ),
 
             else => {
                 const name = @tagName(self);
