@@ -16,6 +16,8 @@ const Token = struct {
         word: []const u8,
         int: u63,
         str: []const u8,
+        // for UTF8 support
+        character: u21,
 
         pub const Tag = std.meta.Tag(@This());
         pub fn tagReadableName(tag: Tag) []const u8 {
@@ -23,10 +25,28 @@ const Token = struct {
                 .word => "word",
                 .int => "integer",
                 .str => "string",
+                .character => "character",
             };
         }
         pub fn humanReadableName(self: @This()) []const u8 {
             return tagReadableName(std.meta.activeTag(self));
+        }
+
+        pub fn format(
+            self: @This(),
+            comptime _: []const u8,
+            _: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            switch (self) {
+                .word, .str => |w| try writer.print("'{s}'", .{w}),
+                .int => |x| try writer.print("'{d}'", .{x}),
+                .character => |c| {
+                    var buf: [4]u8 = undefined;
+                    const len = std.unicode.utf8Encode(c, &buf) catch unreachable;
+                    try writer.print("'{s}'", .{buf[0..len]});
+                },
+            }
         }
     };
 };
@@ -71,35 +91,34 @@ const builtin_words = std.ComptimeStringMap(Op.Code, .{
     .{ "over", .over },
 });
 
-fn parseTokenAsOp(token: *Token) ParseError!Op {
-    return switch (token.value) {
-        .int => |i| .{
-            .loc = token.loc,
-            .code = .{ .push_int = i },
-        },
-        .word => |w| .{
-            .loc = token.loc,
-            .code = builtin_words.get(w) orelse {
-                std.debug.print("{}: unknown word {s}\n", .{ token.loc, w });
-                return error.Parse;
-            },
-        },
-        .str => |*s| {
-            var temp: []const u8 = "";
-            std.mem.swap([]const u8, s, &temp);
-            return .{
-                .loc = token.loc,
-                .code = .{ .push_str = temp },
-            };
-        },
-    };
-}
-
 fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
     return if (std.fmt.parseInt(u63, word, 10)) |int|
         .{ .int = int }
     else |_|
         .{ .word = try gpa.dupe(u8, word) };
+}
+
+fn parseEscapes(gpa: std.mem.Allocator, raw_text: []const u8) ![]const u8 {
+    var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
+
+    var offset: usize = 0;
+    while (offset < raw_text.len) {
+        const next_esc = std.mem.indexOfScalarPos(u8, raw_text, offset, '\\') orelse {
+            try token_text.appendSlice(raw_text[offset..]);
+            break;
+        };
+        try token_text.appendSlice(raw_text[offset..next_esc]);
+        offset = next_esc;
+        switch (std.zig.string_literal.parseEscapeSequence(raw_text, &offset)) {
+            .success => |cp| {
+                var utf8_buf: [4]u8 = undefined;
+                const len = std.unicode.utf8Encode(cp, &utf8_buf) catch unreachable;
+                try token_text.appendSlice(utf8_buf[0..len]);
+            },
+            .failure => |e| std.debug.panic("error: {any}\n", .{e}),
+        }
+    }
+    return try token_text.toOwnedSlice();
 }
 
 fn lexLine(
@@ -112,54 +131,47 @@ fn lexLine(
     var it = std.mem.tokenize(u8, line, &std.ascii.whitespace);
     while (it.next()) |word| {
         const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
-        if (word[0] == '"') {
-            const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '"') orelse {
-                std.debug.print("{}: ERROR: unclosed string literal\n", .{Op.Location{
-                    .file_path = file_path,
-                    .row = row + 1,
-                    .col = col + 1,
-                }});
-                return error.Parse;
-            };
-            const raw_text = line[col + 1 .. col_end];
-            var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
-            defer token_text.deinit();
-
-            var offset: usize = 0;
-            while (offset < raw_text.len) {
-                const next_esc = std.mem.indexOfScalarPos(u8, raw_text, offset, '\\') orelse {
-                    try token_text.appendSlice(raw_text[offset..]);
-                    break;
+        const loc = Op.Location{
+            .file_path = file_path,
+            .row = row + 1,
+            .col = col + 1,
+        };
+        switch (word[0]) {
+            '"' => {
+                const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '"') orelse {
+                    std.debug.print("{}: ERROR: unclosed string literal\n", .{loc});
+                    return error.Parse;
                 };
-                try token_text.appendSlice(raw_text[offset..next_esc]);
-                offset = next_esc;
-                switch (std.zig.string_literal.parseEscapeSequence(raw_text, &offset)) {
-                    .success => |cp| {
-                        var utf8_buf: [4]u8 = undefined;
-                        const len = std.unicode.utf8Encode(cp, &utf8_buf) catch unreachable;
-                        try token_text.appendSlice(utf8_buf[0..len]);
-                    },
-                    .failure => |e| std.debug.panic("error: {any}\n", .{e}),
-                }
-            }
-
-            try tokens.append(.{
-                .loc = .{
-                    .file_path = file_path,
-                    .row = row + 1,
-                    .col = col + 1,
-                },
-                .value = .{ .str = try token_text.toOwnedSlice() },
-            });
-            it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
-        } else try tokens.append(.{
-            .loc = .{
-                .file_path = file_path,
-                .row = row + 1,
-                .col = col + 1,
+                try tokens.append(.{
+                    .loc = loc,
+                    .value = .{ .str = try parseEscapes(gpa, line[col + 1 .. col_end]) },
+                });
+                it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
             },
-            .value = try lexWord(gpa, word),
-        });
+            '\'' => {
+                const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '\'') orelse {
+                    std.debug.print("{}: ERROR: unclosed character literal\n", .{loc});
+                    return error.Parse;
+                };
+                const utf8 = try parseEscapes(gpa, line[col + 1 .. col_end]);
+                const ch = std.unicode.utf8Decode(utf8) catch |e| {
+                    std.debug.print(
+                        "{}: ERROR: invalid character literal: {s}\n",
+                        .{ loc, @errorName(e) },
+                    );
+                    return error.Parse;
+                };
+                try tokens.append(.{
+                    .loc = loc,
+                    .value = .{ .character = ch },
+                });
+                it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
+            },
+            else => try tokens.append(.{
+                .loc = loc,
+                .value = try lexWord(gpa, word),
+            }),
+        }
     }
 }
 
@@ -251,6 +263,7 @@ fn compile(
                     .code = .{ .push_str = try gpa.dupe(u8, value) },
                 };
             },
+            .character => |ch| Op{ .loc = token.loc, .code = .{ .push_int = ch } },
         };
 
         switch (op.code) {
@@ -348,10 +361,7 @@ fn compile(
                 if (!was_end) {
                     std.debug.print("{}: ERROR: expected 'end' at end of macro definition, got ", .{token.loc});
                     if (last_token) |t| {
-                        switch (t.value) {
-                            .word, .str => |text| std.debug.print("'{s}'\n", .{text}),
-                            .int => |i| std.debug.print("'{d}'\n", .{i}),
-                        }
+                        std.debug.print("{}\n", .{t.value});
                     } else {
                         std.debug.print("end of input\n", .{});
                     }
