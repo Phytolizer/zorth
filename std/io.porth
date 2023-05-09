@@ -1,1 +1,3 @@
-macro write 1 1 syscall3 end
+include "linux.porth"
+
+macro write STDOUT SYS_write syscall3 end
