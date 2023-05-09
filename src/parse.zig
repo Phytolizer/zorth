@@ -3,44 +3,13 @@ const Op = @import("Op.zig");
 const Program = @import("Program.zig");
 const Token = @import("Token.zig");
 const Keyword = @import("keyword.zig").Keyword;
+const Intrinsic = @import("intrinsic.zig").Intrinsic;
 
 const ParseError = error{Parse};
 
 fn streq(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
-
-const builtin_words = std.ComptimeStringMap(Op.Code, .{
-    .{ "+", .plus },
-    .{ "-", .minus },
-    .{ "*", .mul },
-    .{ "divmod", .divmod },
-    .{ "shr", .shr },
-    .{ "shl", .shl },
-    .{ "bor", .bor },
-    .{ "band", .band },
-    .{ "print", .print },
-    .{ "mem", .mem },
-    .{ ",", .load },
-    .{ ".", .store },
-    .{ "syscall0", .syscall0 },
-    .{ "syscall1", .syscall1 },
-    .{ "syscall2", .syscall2 },
-    .{ "syscall3", .syscall3 },
-    .{ "syscall4", .syscall4 },
-    .{ "syscall5", .syscall5 },
-    .{ "syscall6", .syscall6 },
-    .{ "=", .eq },
-    .{ ">", .gt },
-    .{ "<", .lt },
-    .{ ">=", .ge },
-    .{ "<=", .le },
-    .{ "!=", .ne },
-    .{ "dup", .dup },
-    .{ "swap", .swap },
-    .{ "drop", .drop },
-    .{ "over", .over },
-});
 
 fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
     return if (std.fmt.parseInt(u63, word, 10)) |int|
@@ -219,8 +188,8 @@ fn compile(
     while (tokens.popOrNull()) |token| {
         switch (token.value) {
             .word => |word| {
-                if (builtin_words.get(word)) |builtin| {
-                    try program.append(Op.init(token.loc, builtin));
+                if (Intrinsic.names.get(word)) |intrinsic| {
+                    try program.append(Op.init(token.loc, .{ .intrinsic = intrinsic }));
                     ip += 1;
                 } else if (macros.get(word)) |macro| {
                     const start = tokens.items.len;
@@ -329,7 +298,7 @@ fn compile(
                             return error.Sema;
                         },
                     };
-                    if (builtin_words.get(name) != null) {
+                    if (Intrinsic.names.get(name) != null) {
                         std.debug.print("{}: ERROR: redefinition of builtin word '{s}'\n", .{ name_tok.loc, name });
                         return error.Sema;
                     }

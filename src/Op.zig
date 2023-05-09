@@ -1,5 +1,6 @@
 const std = @import("std");
 const Keyword = @import("keyword.zig").Keyword;
+const Intrinsic = @import("intrinsic.zig").Intrinsic;
 
 loc: Location,
 code: Code,
@@ -21,42 +22,8 @@ pub const Location = struct {
 pub const Code = union(enum) {
     push_int: u63,
     push_str: []const u8,
-    // Simple.
-    plus,
-    minus,
-    mul,
-    divmod,
 
-    // Comparison.
-    eq,
-    gt,
-    lt,
-    ge,
-    le,
-    ne,
-
-    // Bitwise.
-    shr,
-    shl,
-    bor,
-    band,
-
-    // I/O.
-    print,
-
-    // Memory access.
-    mem,
-    load,
-    store,
-
-    // System calls.
-    syscall0,
-    syscall1,
-    syscall2,
-    syscall3,
-    syscall4,
-    syscall5,
-    syscall6,
+    intrinsic: Intrinsic,
 
     // Control-flow.
     @"if": ?usize,
@@ -64,15 +31,6 @@ pub const Code = union(enum) {
     @"while",
     do: ?usize,
     end: ?usize,
-
-    // Compile-time.
-    keyword: Keyword,
-
-    // Stack.
-    dup,
-    swap,
-    drop,
-    over,
 
     pub const Tag = std.meta.Tag(@This());
     const Self = @This();
@@ -95,7 +53,11 @@ pub const Code = union(enum) {
                     try out.writeAll(" -> NOTHING!!!");
                 }
             },
-            else => {
+            .intrinsic => |i| {
+                const name = @tagName(i);
+                try out.writeAll(name);
+            },
+            .@"while" => {
                 const name = @tagName(self);
                 try out.writeAll(name);
             },
