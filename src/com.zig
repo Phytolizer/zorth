@@ -228,7 +228,7 @@ pub fn compileProgram(
                 const targ = maybe_targ.?;
                 try emitf(&out, "jmp " ++ porth_addr_prefix ++ "{d}", .{targ});
             },
-            .macro => unreachable,
+            .macro, .include => unreachable,
             .end => |maybe_targ| {
                 const targ = maybe_targ.?;
                 if (targ != ip + 1)

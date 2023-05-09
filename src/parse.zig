@@ -62,6 +62,7 @@ const builtin_words = std.ComptimeStringMap(Op.Code, .{
     .{ "do", .{ .do = null } },
     .{ "end", .{ .end = null } },
     .{ "macro", .macro },
+    .{ "include", .include },
     .{ "dup", .dup },
     .{ "2dup", .dup2 },
     .{ "swap", .swap },
@@ -210,7 +211,7 @@ fn compile(
     // ephemeral
     arena: std.mem.Allocator,
     tokens: *std.ArrayList(Token),
-) SemaError!Program {
+) Error!Program {
     var stack = std.ArrayList(usize).init(arena);
     defer stack.deinit();
     std.mem.reverse(Token, tokens.items);
@@ -355,6 +356,37 @@ fn compile(
                     }
                     return error.Sema;
                 }
+            },
+            .include => {
+                const path_tok = tokens.popOrNull() orelse {
+                    std.debug.print("{}: ERROR: expected include path but found end of input\n", .{op.loc});
+                    return error.Sema;
+                };
+                const path = switch (path_tok.value) {
+                    .str => |s| s,
+                    else => {
+                        std.debug.print(
+                            "{}: ERROR: expected include path to be {s} but found {s}\n",
+                            .{
+                                path_tok.loc,
+                                Token.Value.tagReadableName(.word),
+                                path_tok.value.humanReadableName(),
+                            },
+                        );
+                        return error.Sema;
+                    },
+                };
+                var include_file = std.fs.cwd().openFile(path, .{}) catch |e| {
+                    std.debug.print(
+                        "{}: ERROR: file '{s}' could not be opened: {s}\n",
+                        .{ path_tok.loc, path, @errorName(e) },
+                    );
+                    return error.Sema;
+                };
+                defer include_file.close();
+                const included_tokens = try parse(arena, include_file.reader(), path);
+                std.mem.reverse(Token, included_tokens.items);
+                try tokens.appendSlice(included_tokens.items);
             },
             .push_int,
             .push_str,

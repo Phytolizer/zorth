@@ -60,7 +60,10 @@ pub const Code = union(enum) {
     @"while",
     do: ?usize,
     end: ?usize,
+
+    // Compile-time.
     macro,
+    include,
 
     // Stack.
     dup,
