@@ -34,6 +34,7 @@ const Token = struct {
 const builtin_words = std.ComptimeStringMap(Op.Code, .{
     .{ "+", .plus },
     .{ "-", .minus },
+    .{ "*", .mul },
     .{ "mod", .mod },
     .{ "shr", .shr },
     .{ "shl", .shl },
@@ -392,6 +393,7 @@ fn compile(
             .push_str,
             .plus,
             .minus,
+            .mul,
             .mod,
             .eq,
             .gt,

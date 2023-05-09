@@ -8,6 +8,12 @@
 
 "------------------------------\n" 1 1 syscall3
 
+// multiply
+
+42 10 * print
+
+"------------------------------\n" 1 1 syscall3
+
 // modulo
 5 100 mod print
 104 100 mod print

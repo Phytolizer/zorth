@@ -6,6 +6,10 @@ pub fn sub(comptime T: type, x: T, y: T) T {
     return x -% y;
 }
 
+pub fn mul(comptime T: type, x: T, y: T) T {
+    return x *% y;
+}
+
 pub fn eq(comptime T: type, x: T, y: T) T {
     return @boolToInt(x == y);
 }
