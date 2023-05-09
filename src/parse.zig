@@ -153,7 +153,29 @@ fn lexLine(
                     std.debug.print("{}: ERROR: unclosed character literal\n", .{loc});
                     return error.Parse;
                 };
-                const utf8 = try parseEscapes(gpa, line[col + 1 .. col_end]);
+                const raw_text = line[col + 1 .. col_end];
+                const utf8 = try parseEscapes(gpa, raw_text);
+                if (utf8.len == 0) {
+                    std.debug.print(
+                        "{}: ERROR: invalid character literal '{s}': no data\n",
+                        .{ loc, raw_text },
+                    );
+                    return error.Parse;
+                }
+                const bs_len = std.unicode.utf8ByteSequenceLength(utf8[0]) catch {
+                    std.debug.print(
+                        "{}: ERROR: invalid character literal '{s}': not valid UTF-8\n",
+                        .{ loc, raw_text },
+                    );
+                    return error.Parse;
+                };
+                if (utf8.len != bs_len) {
+                    std.debug.print(
+                        "{}: ERROR: invalid character literal '{s}': too {s}\n",
+                        .{ loc, raw_text, if (utf8.len > bs_len) "long" else "short" },
+                    );
+                    return error.Parse;
+                }
                 const ch = std.unicode.utf8Decode(utf8) catch |e| {
                     std.debug.print(
                         "{}: ERROR: invalid character literal: {s}\n",
