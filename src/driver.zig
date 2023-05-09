@@ -49,8 +49,8 @@ pub fn run(
             return error.Usage;
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
-        defer gpa.free(program);
-        try sim.simulateProgram(gpa, program, stdout);
+        defer program.deinit(gpa);
+        try sim.simulateProgram(gpa, program.items, stdout);
     } else if (std.mem.eql(u8, subcommand, "com")) {
         var run_flag = false;
         var file_path_arg: ?[]const u8 = null;
@@ -75,7 +75,7 @@ pub fn run(
             return error.Usage;
         };
         const program = try parse.loadProgramFromFile(gpa, file_path);
-        defer gpa.free(program);
+        defer program.deinit(gpa);
         const path = std.fs.path;
         var basename_alloc = false;
         const basename = if (out_path_arg) |op| blk: {
@@ -99,7 +99,7 @@ pub fn run(
         const asm_path = try std.fmt.allocPrint(gpa, "{s}.asm", .{basename});
         defer gpa.free(asm_path);
         std.debug.print("[INFO] Generating {s}\n", .{asm_path});
-        try com.compileProgram(program, asm_path);
+        try com.compileProgram(gpa, program.items, asm_path);
         try cmd.callCmd(gpa, &.{ "nasm", "-felf64", asm_path });
         const obj_path = try std.fmt.allocPrint(gpa, "{s}.o", .{basename});
         defer gpa.free(obj_path);

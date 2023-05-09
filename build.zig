@@ -9,8 +9,14 @@ pub fn build(b: *std.Build) void {
         "mem_capacity",
         "Maximum memory for Porth programs, default 640KiB",
     ) orelse 640 * 1024;
+    const str_capacity = b.option(
+        usize,
+        "str_capacity",
+        "Maximum memory for Porth string literals, default 640KiB",
+    ) orelse 640 * 1024;
     const opts = b.addOptions();
     opts.addOption(usize, "mem_capacity", mem_capacity);
+    opts.addOption(usize, "str_capacity", str_capacity);
     const opts_mod = opts.createModule();
 
     const cmd = b.addModule("porth-cmd", .{

@@ -1,5 +1,6 @@
 const std = @import("std");
 const Op = @import("Op.zig");
+const Program = @import("Program.zig");
 
 const ParseError = error{Parse};
 
@@ -14,6 +15,7 @@ const Token = struct {
     const Value = union(enum) {
         word: []const u8,
         int: u63,
+        str: []const u8,
 
         pub const Tag = std.meta.Tag(@This());
     };
@@ -56,9 +58,12 @@ const word_map = std.ComptimeStringMap(Op.Code, .{
     .{ "over", .over },
 });
 
-fn parseTokenAsOp(token: Token) ParseError!Op {
+fn parseTokenAsOp(token: *Token) ParseError!Op {
     return switch (token.value) {
-        .int => |i| .{ .loc = token.loc, .code = .{ .push = i } },
+        .int => |i| .{
+            .loc = token.loc,
+            .code = .{ .push_int = i },
+        },
         .word => |w| .{
             .loc = token.loc,
             .code = word_map.get(w) orelse {
@@ -66,14 +71,77 @@ fn parseTokenAsOp(token: Token) ParseError!Op {
                 return error.Parse;
             },
         },
+        .str => |*s| {
+            var temp: []const u8 = "";
+            std.mem.swap([]const u8, s, &temp);
+            return .{
+                .loc = token.loc,
+                .code = .{ .push_str = .{ .value = temp } },
+            };
+        },
     };
 }
 
-fn lexWord(word: []const u8) Token.Value {
+fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
     return if (std.fmt.parseInt(u63, word, 10)) |int|
         .{ .int = int }
     else |_|
-        .{ .word = word };
+        .{ .word = try gpa.dupe(u8, word) };
+}
+
+fn lexLine(
+    gpa: std.mem.Allocator,
+    tokens: *std.ArrayList(Token),
+    file_path: []const u8,
+    row: usize,
+    line: []const u8,
+) !void {
+    var it = std.mem.tokenize(u8, line, &std.ascii.whitespace);
+    while (it.next()) |word| {
+        const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
+        if (word[0] == '"') {
+            const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '"') orelse
+                std.debug.panic("no close quote found", .{});
+            const raw_text = line[col + 1 .. col_end];
+            var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
+            defer token_text.deinit();
+
+            var offset: usize = 0;
+            while (offset < raw_text.len) {
+                const next_esc = std.mem.indexOfScalarPos(u8, raw_text, offset, '\\') orelse {
+                    try token_text.appendSlice(raw_text[offset..]);
+                    break;
+                };
+                try token_text.appendSlice(raw_text[offset..next_esc]);
+                offset = next_esc;
+                switch (std.zig.string_literal.parseEscapeSequence(raw_text, &offset)) {
+                    .success => |cp| {
+                        var utf8_buf: [4]u8 = undefined;
+                        const len = std.unicode.utf8Encode(cp, &utf8_buf) catch unreachable;
+                        try token_text.appendSlice(utf8_buf[0..len]);
+                    },
+                    .failure => |e| std.debug.panic("error: {any}\n", .{e}),
+                }
+            }
+
+            try tokens.append(.{
+                .loc = .{
+                    .file_path = file_path,
+                    .row = row + 1,
+                    .col = col + 1,
+                },
+                .value = .{ .str = try token_text.toOwnedSlice() },
+            });
+            it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
+        } else try tokens.append(.{
+            .loc = .{
+                .file_path = file_path,
+                .row = row + 1,
+                .col = col + 1,
+            },
+            .value = try lexWord(gpa, word),
+        });
+    }
 }
 
 fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
@@ -87,23 +155,23 @@ fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
 fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) ![]Op {
     var line_buf = std.ArrayList(u8).init(gpa);
     defer line_buf.deinit();
-    var program = std.ArrayList(Op).init(gpa);
-    defer program.deinit();
+    var tokens = std.ArrayList(Token).init(gpa);
+    defer {
+        for (tokens.items) |tok| switch (tok.value) {
+            .str, .word => |s| gpa.free(s),
+            else => {},
+        };
+        tokens.deinit();
+    }
     var row: usize = 0;
     while (try readLine(in, &line_buf)) |line| : (row += 1) {
         const before_comment = line[0 .. std.mem.indexOf(u8, line, "//") orelse line.len];
-        var it = std.mem.tokenize(u8, before_comment, &std.ascii.whitespace);
-        while (it.next()) |word| {
-            const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
-            try program.append(try parseTokenAsOp(.{
-                .loc = .{
-                    .file_path = file_path,
-                    .row = row + 1,
-                    .col = col + 1,
-                },
-                .value = lexWord(word),
-            }));
-        }
+        try lexLine(gpa, &tokens, file_path, row, before_comment);
+    }
+    var program = try std.ArrayList(Op).initCapacity(gpa, tokens.items.len);
+    defer program.deinit();
+    for (tokens.items) |*tok| {
+        program.appendAssumeCapacity(try parseTokenAsOp(tok));
     }
     return try program.toOwnedSlice();
 }
@@ -154,7 +222,8 @@ fn crossReferenceBlocks(gpa: std.mem.Allocator, program: []Op) SemaError!void {
                     },
                 }
             },
-            .push,
+            .push_int,
+            .push_str,
             .plus,
             .minus,
             .mod,
@@ -200,15 +269,15 @@ pub const Error = SemaError ||
     std.fs.File.ReadError ||
     error{ StreamTooLong, EndOfStream };
 
-pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) Error![]Op {
+pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) Error!Program {
     const f = std.fs.cwd().openFile(file_path, .{}) catch |e| {
         std.debug.print("[ERROR] Failed to open '{s}'!\n", .{file_path});
         return e;
     };
     defer f.close();
 
-    const program = try parse(gpa, f.reader(), file_path);
-    errdefer gpa.free(program);
-    try crossReferenceBlocks(gpa, program);
+    const program = Program.init(try parse(gpa, f.reader(), file_path));
+    errdefer program.deinit(gpa);
+    try crossReferenceBlocks(gpa, program.items);
     return program;
 }

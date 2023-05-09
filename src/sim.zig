@@ -11,22 +11,41 @@ fn binaryOp(
     stack.appendAssumeCapacity(op(i64, a, b));
 }
 
-pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: anytype) !void {
+pub fn simulateProgram(gpa: std.mem.Allocator, program: []Op, raw_stdout: anytype) !void {
     var stack = std.ArrayList(i64).init(gpa);
     defer stack.deinit();
     var stdout_buf = std.io.bufferedWriter(raw_stdout);
     defer stdout_buf.flush() catch {};
     const stdout = stdout_buf.writer();
-    var mem = try gpa.alloc(u8, @import("opts").mem_capacity);
+    const opts = @import("opts");
+    var mem = try gpa.alloc(u8, opts.mem_capacity + opts.str_capacity);
     defer gpa.free(mem);
     @memset(mem, 0);
 
+    var str_size: usize = 0;
+
     var ip: usize = 0;
     while (ip < program.len) {
-        const op = program[ip];
+        const op = &program[ip];
         switch (op.code) {
-            .push => |x| {
+            .push_int => |x| {
                 try stack.append(x);
+                ip += 1;
+            },
+            .push_str => |*x| {
+                const s = x.value;
+                try stack.append(@intCast(i64, s.len));
+                const addr = x.addr orelse blk: {
+                    const addr = str_size;
+                    x.addr = addr;
+                    for (s, mem[str_size .. str_size + s.len]) |src, *dst|
+                        dst.* = src;
+                    str_size += s.len;
+                    if (str_size >= opts.str_capacity)
+                        std.debug.panic("string buffer overflow by {d} bytes", .{str_size - opts.str_capacity});
+                    break :blk addr;
+                };
+                try stack.append(@intCast(i64, addr));
                 ip += 1;
             },
             .plus => {
@@ -87,7 +106,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 ip += 1;
             },
             .mem => {
-                try stack.append(0);
+                try stack.append(opts.str_capacity);
                 ip += 1;
             },
             .load => {

@@ -12,8 +12,10 @@ fn emitf(out: anytype, comptime fmt: []const u8, args: anytype) !void {
 }
 
 const porth_addr_prefix = ".porth_addr_";
+const porth_str_prefix = "porth_str_";
 
 pub fn compileProgram(
+    gpa: std.mem.Allocator,
     program: []const Op,
     out_file_path: []const u8,
 ) !void {
@@ -24,6 +26,9 @@ pub fn compileProgram(
     defer out_buf.flush() catch {};
     const out = out_buf.writer();
 
+    var strs = std.ArrayList([]const u8).init(gpa);
+    defer strs.deinit();
+
     try out.writeAll(dump_asm);
     try out.writeAll("global _start\n");
     try out.writeAll("_start:\n");
@@ -33,9 +38,19 @@ pub fn compileProgram(
         try op.code.display(out);
         try out.writeAll(" --\n");
         switch (op.code) {
-            .push => |x| {
+            .push_int => |x| {
                 try emitf(&out, "mov rax, {d}", .{x});
                 try emit(&out, "push rax");
+            },
+            .push_str => |x| {
+                try emitf(&out, "mov rax, {d}", .{x.value.len});
+                try emit(&out, "push rax");
+                try emitf(
+                    &out,
+                    "push " ++ porth_str_prefix ++ "{d}",
+                    .{strs.items.len},
+                );
+                try strs.append(x.value);
             },
             .plus => {
                 try emit(&out, "pop rbx");
@@ -254,6 +269,28 @@ pub fn compileProgram(
     try emit(&out, "mov rax, " ++ SYS_WRITE);
     try emit(&out, "mov rdi, 0");
     try emit(&out, "syscall");
+    try out.writeAll("segment .data\n");
+    for (strs.items, 0..) |s, i| {
+        var hexstrings = std.ArrayList([]const u8).init(gpa);
+        defer {
+            for (hexstrings.items) |hs| gpa.free(hs);
+            hexstrings.deinit();
+        }
+        for (s) |b| {
+            const hs = try std.fmt.allocPrint(gpa, "0x{x}", .{b});
+            errdefer gpa.free(hs);
+            try hexstrings.append(hs);
+        }
+        try out.print(porth_str_prefix ++ "{d}: db ", .{i});
+        var first = true;
+        for (hexstrings.items) |hs| {
+            if (first) {
+                first = false;
+            } else try out.writeByte(',');
+            try out.writeAll(hs);
+        }
+        try out.writeByte('\n');
+    }
     try out.writeAll("segment .bss\n");
     try out.print("mem: resb {d}\n", .{@import("opts").mem_capacity});
 }
