@@ -1,4 +1,4 @@
-include "io.porth"
+include "std.porth"
 
 // write "abc"
 mem 0 + 97 .

@@ -1,4 +1,4 @@
-include "io.porth"
+include "std.porth"
 
 // equals
 69 420 = print

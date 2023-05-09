@@ -68,7 +68,6 @@ pub const Code = union(enum) {
 
     // Stack.
     dup,
-    dup2,
     swap,
     drop,
     over,
