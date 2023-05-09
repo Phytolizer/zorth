@@ -62,12 +62,11 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                 binaryOp(&stack, math.mul);
                 ip += 1;
             },
-            .div => {
-                binaryOp(&stack, math.div);
-                ip += 1;
-            },
-            .mod => {
-                binaryOp(&stack, math.mod);
+            .divmod => {
+                const b = stack.pop();
+                const a = stack.pop();
+                stack.appendAssumeCapacity(math.div(@TypeOf(a), a, b));
+                stack.appendAssumeCapacity(math.mod(@TypeOf(a), a, b));
                 ip += 1;
             },
             .eq => {

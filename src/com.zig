@@ -70,18 +70,12 @@ pub fn compileProgram(
                 try emit(&out, "mul rbx");
                 try emit(&out, "push rax");
             },
-            .div => {
+            .divmod => {
                 try emit(&out, "xor rdx, rdx");
                 try emit(&out, "pop rbx");
                 try emit(&out, "pop rax");
                 try emit(&out, "div rbx");
                 try emit(&out, "push rax");
-            },
-            .mod => {
-                try emit(&out, "xor rdx, rdx");
-                try emit(&out, "pop rbx");
-                try emit(&out, "pop rax");
-                try emit(&out, "div rbx");
                 try emit(&out, "push rdx");
             },
             .eq => {
