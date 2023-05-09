@@ -20,6 +20,15 @@ fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
         .{ .word = try gpa.dupe(u8, word) };
 }
 
+fn stringLitEnd(line: []const u8, start: usize, quote: u8) ?usize {
+    var pos = start;
+    while (std.mem.indexOfScalarPos(u8, line, pos, quote)) |new_pos| {
+        pos = new_pos + 1;
+        if (line[new_pos - 1] != '\\') return new_pos;
+    }
+    return null;
+}
+
 fn parseEscapes(gpa: std.mem.Allocator, loc: Op.Location, raw_text: []const u8) ![]const u8 {
     var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
 
@@ -70,7 +79,7 @@ fn lexLine(
         };
         switch (word[0]) {
             '"' => {
-                const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '"') orelse {
+                const col_end = stringLitEnd(line, col + 1, '"') orelse {
                     std.debug.print("{}: ERROR: unclosed string literal\n", .{loc});
                     return error.Parse;
                 };
@@ -81,7 +90,7 @@ fn lexLine(
                 it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
             },
             '\'' => {
-                const col_end = std.mem.indexOfScalarPos(u8, line, col + 1, '\'') orelse {
+                const col_end = stringLitEnd(line, col + 1, '\'') orelse {
                     std.debug.print("{}: ERROR: unclosed character literal\n", .{loc});
                     return error.Parse;
                 };
