@@ -24,7 +24,10 @@ pub const Code = union(enum) {
     plus,
     minus,
     mul,
+    div,
     mod,
+
+    // Comparison.
     eq,
     gt,
     lt,

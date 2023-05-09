@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub fn add(comptime T: type, x: T, y: T) T {
     return x +% y;
 }
@@ -8,6 +10,13 @@ pub fn sub(comptime T: type, x: T, y: T) T {
 
 pub fn mul(comptime T: type, x: T, y: T) T {
     return x *% y;
+}
+
+pub fn div(comptime T: type, x: T, y: T) T {
+    return std.math.divTrunc(T, x, y) catch |e| std.debug.panic(
+        "dividing: {s}\n",
+        .{@errorName(e)},
+    );
 }
 
 pub fn eq(comptime T: type, x: T, y: T) T {
