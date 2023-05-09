@@ -22,10 +22,10 @@ const Token = struct {
         pub const Tag = std.meta.Tag(@This());
         pub fn tagReadableName(tag: Tag) []const u8 {
             return switch (tag) {
-                .word => "word",
-                .int => "integer",
-                .str => "string",
-                .character => "character",
+                .word => "a word",
+                .int => "an integer",
+                .str => "a string",
+                .character => "a character",
             };
         }
         pub fn humanReadableName(self: @This()) []const u8 {
@@ -246,6 +246,7 @@ fn compile(
     // ephemeral
     arena: std.mem.Allocator,
     tokens: *std.ArrayList(Token),
+    include_paths: []const []const u8,
 ) Error!Program {
     var stack = std.ArrayList(usize).init(arena);
     defer stack.deinit();
@@ -409,10 +410,22 @@ fn compile(
                         return error.Sema;
                     },
                 };
-                var include_file = std.fs.cwd().openFile(path, .{}) catch |e| {
+                var include_file = doInclude: {
+                    if (std.fs.path.isAbsolute(path)) {
+                        if (std.fs.openFileAbsolute(path, .{})) |f|
+                            break :doInclude f
+                        else |_| {}
+                    } else for (include_paths) |include_path| {
+                        const full_path = try std.fs.path.join(arena, &.{ include_path, path });
+                        if (std.fs.cwd().openFile(full_path, .{})) |f| {
+                            const stat = try f.stat();
+                            if (stat.kind != .File) continue;
+                            break :doInclude f;
+                        } else |_| continue;
+                    }
                     std.debug.print(
-                        "{}: ERROR: file '{s}' could not be opened: {s}\n",
-                        .{ path_tok.loc, path, @errorName(e) },
+                        "{}: ERROR: file '{s}' could not be opened\n",
+                        .{ path_tok.loc, path },
                     );
                     return error.Sema;
                 };
@@ -473,7 +486,11 @@ pub const Error = SemaError ||
     std.fs.File.ReadError ||
     error{ StreamTooLong, EndOfStream };
 
-pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) Error!Program {
+pub fn loadProgramFromFile(
+    gpa: std.mem.Allocator,
+    file_path: []const u8,
+    include_paths: []const []const u8,
+) Error!Program {
     const f = std.fs.cwd().openFile(file_path, .{}) catch |e| {
         std.debug.print("[ERROR] Failed to open '{s}'!\n", .{file_path});
         return e;
@@ -483,5 +500,5 @@ pub fn loadProgramFromFile(gpa: std.mem.Allocator, file_path: []const u8) Error!
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     var tokens = try parse(arena.allocator(), f.reader(), file_path);
-    return try compile(gpa, arena.allocator(), &tokens);
+    return try compile(gpa, arena.allocator(), &tokens, include_paths);
 }

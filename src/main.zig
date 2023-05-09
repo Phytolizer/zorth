@@ -15,6 +15,7 @@ fn run() !u8 {
     return try driver.run(gpa, args, stderr, stdout);
 }
 
-pub fn main() void {
+pub fn main() !void {
     std.process.exit(run() catch 1);
+    // std.process.exit(try run());
 }

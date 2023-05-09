@@ -9,7 +9,9 @@ const parse = @import("parse.zig");
 
 fn usage(out: anytype, program: []const u8) void {
     out.print(
-        \\Usage: {s} <SUBCOMMAND> [ARGS]
+        \\Usage: {s} [OPTIONS] <SUBCOMMAND> [ARGS]
+        \\OPTIONS:
+        \\  -I <path>               Add to the include search path
         \\SUBCOMMANDS:
         \\  sim <file>              Simulate the program
         \\  com [OPTIONS] <file>    Compile the program
@@ -27,6 +29,11 @@ pub const Error = error{Usage} ||
     std.ChildProcess.SpawnError ||
     cmd.CallError;
 
+const builtin_include_paths = &[_][]const u8{
+    ".",
+    std.fmt.comptimePrint(".{c}std", .{std.fs.path.sep}),
+};
+
 pub fn run(
     gpa: std.mem.Allocator,
     args: []const []const u8,
@@ -36,7 +43,26 @@ pub fn run(
     var argp = args;
     const program_name = shift(&argp) orelse unreachable;
 
-    const subcommand = shift(&argp) orelse {
+    var include_paths = try std.ArrayList([]const u8).initCapacity(gpa, builtin_include_paths.len);
+    defer include_paths.deinit();
+    include_paths.appendSliceAssumeCapacity(builtin_include_paths);
+
+    var subcommand_arg: ?[]const u8 = null;
+    while (shift(&argp)) |arg| {
+        if (std.mem.eql(u8, arg, "-I")) {
+            const path = shift(&argp) orelse {
+                usage(stderr, program_name);
+                std.debug.print("[ERROR] no argument provided for -I\n", .{});
+                return error.Usage;
+            };
+            try include_paths.append(path);
+        } else {
+            subcommand_arg = arg;
+            break;
+        }
+    }
+
+    const subcommand = subcommand_arg orelse {
         usage(stderr, program_name);
         std.debug.print("[ERROR] no subcommand provided\n", .{});
         return error.Usage;
@@ -48,7 +74,7 @@ pub fn run(
             std.debug.print("[ERROR] no input file\n", .{});
             return error.Usage;
         };
-        const program = try parse.loadProgramFromFile(gpa, file_path);
+        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items);
         defer program.deinit(gpa);
         try sim.simulateProgram(gpa, program.items, stdout);
     } else if (std.mem.eql(u8, subcommand, "com")) {
@@ -74,7 +100,7 @@ pub fn run(
             std.debug.print("[ERROR] no input file\n", .{});
             return error.Usage;
         };
-        const program = try parse.loadProgramFromFile(gpa, file_path);
+        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items);
         defer program.deinit(gpa);
         const path = std.fs.path;
         var basename_alloc = false;
