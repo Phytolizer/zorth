@@ -10,6 +10,11 @@ include "std.porth"
 "Hello, World\n" stdout write // ASCII
 "Привет, Мир!\n" stdout write // UTF-8
 "Hello, \"World\"!\n" stdout write // with embedded quotes
+"
+multi-
+line
+string
+" stdout write
 
 "------------------------------\n" stdout write
 

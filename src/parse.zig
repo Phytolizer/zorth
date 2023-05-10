@@ -24,7 +24,7 @@ fn stringLitEnd(line: []const u8, start: usize, quote: u8) ?usize {
     var pos = start;
     while (std.mem.indexOfScalarPos(u8, line, pos, quote)) |new_pos| {
         pos = new_pos + 1;
-        if (line[new_pos - 1] != '\\') return new_pos;
+        if (new_pos == 0 or line[new_pos - 1] != '\\') return new_pos;
     }
     return null;
 }
@@ -62,82 +62,124 @@ fn parseEscapes(gpa: std.mem.Allocator, loc: Op.Location, raw_text: []const u8) 
     return try token_text.toOwnedSlice();
 }
 
-fn lexLine(
+fn getLine(text: []const u8, line_starts: []const usize, row: usize) []const u8 {
+    return if (row + 1 < line_starts.len)
+        text[line_starts[row] .. line_starts[row + 1] - 1]
+    else
+        text[line_starts[row]..];
+}
+
+fn lexLines(
     gpa: std.mem.Allocator,
     tokens: *std.ArrayList(Token),
     file_path: []const u8,
-    row: usize,
-    line: []const u8,
+    text: []const u8,
 ) !void {
-    var it = std.mem.tokenize(u8, line, &std.ascii.whitespace);
-    while (it.next()) |word| {
-        const col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
-        const loc = Op.Location{
-            .file_path = file_path,
-            .row = row + 1,
-            .col = col + 1,
-        };
-        switch (word[0]) {
-            '"' => {
-                const col_end = stringLitEnd(line, col + 1, '"') orelse {
-                    std.debug.print("{}: ERROR: unclosed string literal\n", .{loc});
-                    return error.Parse;
-                };
-                try tokens.append(.{
-                    .loc = loc,
-                    .value = .{ .str = try parseEscapes(gpa, loc, line[col + 1 .. col_end]) },
-                });
-                it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
-            },
-            '\'' => {
-                const col_end = stringLitEnd(line, col + 1, '\'') orelse {
-                    std.debug.print("{}: ERROR: unclosed character literal\n", .{loc});
-                    return error.Parse;
-                };
-                const raw_text = line[col + 1 .. col_end];
-                const utf8 = try parseEscapes(gpa, loc, raw_text);
-                if (utf8.len == 0) {
-                    std.debug.print(
-                        "{}: ERROR: invalid character literal '{s}': no data\n",
-                        .{ loc, raw_text },
-                    );
-                    return error.Parse;
-                }
-                const bs_len = std.unicode.utf8ByteSequenceLength(utf8[0]) catch {
-                    std.debug.print(
-                        "{}: ERROR: invalid character literal '{s}': not valid UTF-8\n",
-                        .{ loc, raw_text },
-                    );
-                    return error.Parse;
-                };
-                if (utf8.len != bs_len) {
-                    std.debug.print(
-                        "{}: ERROR: invalid character literal '{s}': too {s}\n",
-                        .{ loc, raw_text, if (utf8.len > bs_len) "long" else "short" },
-                    );
-                    return error.Parse;
-                }
-                const ch = std.unicode.utf8Decode(utf8) catch |e| {
-                    std.debug.print(
-                        "{}: ERROR: invalid character literal: {s}\n",
-                        .{ loc, @errorName(e) },
-                    );
-                    return error.Parse;
-                };
-                try tokens.append(.{
-                    .loc = loc,
-                    .value = .{ .character = ch },
-                });
-                it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
-            },
-            else => {
-                if (std.mem.startsWith(u8, word, "//")) {
-                    break;
-                } else try tokens.append(.{
-                    .loc = loc,
-                    .value = try lexWord(gpa, word),
-                });
-            },
+    var row: usize = 0;
+    var string_lit = std.ArrayList(u8).init(gpa);
+    var line_starts = std.ArrayList(usize).init(gpa);
+    {
+        var pos: usize = 0;
+        while (std.mem.indexOfScalarPos(u8, text, pos, '\n')) |new_pos| {
+            try line_starts.append(pos);
+            pos = new_pos + 1;
+        }
+        if (pos < text.len)
+            try line_starts.append(pos);
+    }
+    while (row < line_starts.items.len) : (row += 1) {
+        var line = getLine(text, line_starts.items, row);
+        var it = std.mem.tokenize(u8, line, &std.ascii.whitespace);
+        while (it.next()) |word| {
+            var col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
+            const loc = Op.Location{
+                .file_path = file_path,
+                .row = row + 1,
+                .col = col + 1,
+            };
+            switch (word[0]) {
+                '"' => {
+                    var first = true;
+                    var col_end = col;
+                    while (row < line_starts.items.len) {
+                        var start = col;
+                        if (first) {
+                            first = false;
+                            start += 1;
+                        } else {
+                            line = getLine(text, line_starts.items, row);
+                        }
+                        col_end = stringLitEnd(line, start, '"') orelse {
+                            try string_lit.appendSlice(line[start..]);
+                            try string_lit.append('\n');
+                            row += 1;
+                            col = 0;
+                            continue;
+                        };
+                        try string_lit.appendSlice(line[start..col_end]);
+                        break;
+                    }
+                    if (row >= line_starts.items.len) {
+                        std.debug.print("{}: ERROR: unclosed string literal\n", .{loc});
+                        return error.Parse;
+                    }
+                    const token_text = try string_lit.toOwnedSlice();
+                    try tokens.append(.{
+                        .loc = loc,
+                        .value = .{ .str = try parseEscapes(gpa, loc, token_text) },
+                    });
+                    it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
+                },
+                '\'' => {
+                    const col_end = stringLitEnd(line, col + 1, '\'') orelse {
+                        std.debug.print("{}: ERROR: unclosed character literal\n", .{loc});
+                        return error.Parse;
+                    };
+                    const raw_text = line[col + 1 .. col_end];
+                    const utf8 = try parseEscapes(gpa, loc, raw_text);
+                    if (utf8.len == 0) {
+                        std.debug.print(
+                            "{}: ERROR: invalid character literal '{s}': no data\n",
+                            .{ loc, raw_text },
+                        );
+                        return error.Parse;
+                    }
+                    const bs_len = std.unicode.utf8ByteSequenceLength(utf8[0]) catch {
+                        std.debug.print(
+                            "{}: ERROR: invalid character literal '{s}': not valid UTF-8\n",
+                            .{ loc, raw_text },
+                        );
+                        return error.Parse;
+                    };
+                    if (utf8.len != bs_len) {
+                        std.debug.print(
+                            "{}: ERROR: invalid character literal '{s}': too {s}\n",
+                            .{ loc, raw_text, if (utf8.len > bs_len) "long" else "short" },
+                        );
+                        return error.Parse;
+                    }
+                    const ch = std.unicode.utf8Decode(utf8) catch |e| {
+                        std.debug.print(
+                            "{}: ERROR: invalid character literal: {s}\n",
+                            .{ loc, @errorName(e) },
+                        );
+                        return error.Parse;
+                    };
+                    try tokens.append(.{
+                        .loc = loc,
+                        .value = .{ .character = ch },
+                    });
+                    it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
+                },
+                else => {
+                    if (std.mem.startsWith(u8, word, "//")) {
+                        break;
+                    } else try tokens.append(.{
+                        .loc = loc,
+                        .value = try lexWord(gpa, word),
+                    });
+                },
+            }
         }
     }
 }
@@ -161,10 +203,8 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
         };
         tokens.deinit();
     }
-    var row: usize = 0;
-    while (try readLine(in, &line_buf)) |line| : (row += 1) {
-        try lexLine(gpa, &tokens, file_path, row, line);
-    }
+    const contents = try in.readAllAlloc(gpa, std.math.maxInt(usize));
+    try lexLines(gpa, &tokens, file_path, contents);
     return tokens;
 }
 
