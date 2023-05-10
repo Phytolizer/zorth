@@ -82,7 +82,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&sim_cmd);
     std.debug.print("\n", .{});
-    const sim_code = try driver.run(gpa, &sim_cmd, sim_err, sim_out);
+    const sim_code = driver.run(gpa, &sim_cmd, sim_err, sim_out) catch 1;
 
     var sim_fail = false;
     if (!(std.mem.eql(u8, sim_out_buf.items, expected.output) and
@@ -121,7 +121,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&com_cmd);
     std.debug.print("\n", .{});
-    const com_code = try driver.run(gpa, &com_cmd, com_err, com_out);
+    const com_code = driver.run(gpa, &com_cmd, com_err, com_out) catch 1;
 
     if (!(std.mem.eql(u8, com_out_buf.items, expected.output) and
         std.mem.eql(u8, com_err_buf.items, expected.err) and
@@ -179,7 +179,7 @@ fn record(gpa: std.mem.Allocator, path: []const u8, mode: RecordMode) TestError!
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(run_cmd);
     std.debug.print("\n", .{});
-    const code = try driver.run(gpa, run_cmd, err, out);
+    const code = driver.run(gpa, run_cmd, err, out) catch 1;
     const bin_path = try expectedPath(gpa, path);
     defer gpa.free(bin_path);
     std.debug.print("[INFO] Saving output to {s}\n", .{bin_path});
