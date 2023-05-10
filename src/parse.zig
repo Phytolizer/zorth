@@ -378,16 +378,25 @@ fn compile(
 
                     var last_token: ?Token = null;
                     var was_end = false;
+                    var nesting_depth: usize = 0;
                     while (tokens.popOrNull()) |macro_tok| {
                         last_token = macro_tok;
                         switch (macro_tok.value) {
-                            .keyword => |k| if (k == .end) {
+                            .keyword => |k| if (k == .end and nesting_depth == 0) {
                                 was_end = true;
                                 break;
                             },
                             else => {},
                         }
                         try macro.tokens.append(macro_tok);
+                        switch (macro_tok.value) {
+                            .keyword => |k| switch (k) {
+                                .@"if", .@"while", .macro => nesting_depth += 1,
+                                .end => nesting_depth -= 1,
+                                else => {},
+                            },
+                            else => {},
+                        }
                     }
                     if (!was_end) {
                         std.debug.print(
