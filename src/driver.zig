@@ -53,7 +53,7 @@ pub fn run(
         if (std.mem.eql(u8, arg, "-I")) {
             const path = shift(&argp) orelse {
                 usage(stderr, program_name);
-                std.debug.print("[ERROR] no argument provided for -I\n", .{});
+                stderr.print("[ERROR] no argument provided for -I\n", .{}) catch unreachable;
                 return error.Usage;
             };
             try include_paths.append(path);
@@ -65,19 +65,19 @@ pub fn run(
 
     const subcommand = subcommand_arg orelse {
         usage(stderr, program_name);
-        std.debug.print("[ERROR] no subcommand provided\n", .{});
+        stderr.print("[ERROR] no subcommand provided\n", .{}) catch unreachable;
         return error.Usage;
     };
 
     if (std.mem.eql(u8, subcommand, "sim")) {
         const file_path = shift(&argp) orelse {
             usage(stderr, program_name);
-            std.debug.print("[ERROR] no input file\n", .{});
+            stderr.print("[ERROR] no input file\n", .{}) catch unreachable;
             return error.Usage;
         };
-        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items);
+        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items, stderr);
         defer program.deinit(gpa);
-        try sim.simulateProgram(gpa, program.items, stdout);
+        try sim.simulateProgram(gpa, program.items, stderr, stdout);
     } else if (std.mem.eql(u8, subcommand, "com")) {
         var run_flag = false;
         var silent_flag = false;
@@ -91,7 +91,7 @@ pub fn run(
             } else if (std.mem.eql(u8, arg, "-o")) {
                 out_path_arg = shift(&argp) orelse {
                     usage(stderr, program_name);
-                    std.debug.print("[ERROR] no argument to -o\n", .{});
+                    stderr.print("[ERROR] no argument to -o\n", .{}) catch unreachable;
                     return error.Usage;
                 };
             } else {
@@ -101,10 +101,10 @@ pub fn run(
         }
         const file_path = file_path_arg orelse {
             usage(stderr, program_name);
-            std.debug.print("[ERROR] no input file\n", .{});
+            stderr.print("[ERROR] no input file\n", .{}) catch unreachable;
             return error.Usage;
         };
-        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items);
+        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items, stderr);
         defer program.deinit(gpa);
         const path = std.fs.path;
         var basename_alloc = false;
@@ -129,7 +129,7 @@ pub fn run(
         const asm_path = try std.fmt.allocPrint(gpa, "{s}.asm", .{basename});
         defer gpa.free(asm_path);
         if (!silent_flag)
-            std.debug.print("[INFO] Generating {s}\n", .{asm_path});
+            stderr.print("[INFO] Generating {s}\n", .{asm_path}) catch unreachable;
         try com.compileProgram(gpa, program.items, asm_path);
         try cmd.callCmd(gpa, &.{ "nasm", "-felf64", asm_path }, .{ .silent = silent_flag });
         const obj_path = try std.fmt.allocPrint(gpa, "{s}.o", .{basename});
@@ -146,7 +146,7 @@ pub fn run(
         usage(stdout, program_name);
     } else {
         usage(stderr, program_name);
-        std.debug.print("[ERROR] unknown subcommand {s}\n", .{subcommand});
+        stderr.print("[ERROR] unknown subcommand {s}\n", .{subcommand}) catch unreachable;
         return error.Usage;
     }
     return 0;

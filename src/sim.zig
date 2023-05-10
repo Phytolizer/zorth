@@ -11,7 +11,12 @@ fn binaryOp(
     stack.appendAssumeCapacity(op(i64, a, b));
 }
 
-pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: anytype) !void {
+pub fn simulateProgram(
+    gpa: std.mem.Allocator,
+    program: []const Op,
+    stderr: anytype,
+    raw_stdout: anytype,
+) !void {
     var stack = std.ArrayList(i64).init(gpa);
     defer stack.deinit();
     var stdout_buf = std.io.bufferedWriter(raw_stdout);
@@ -175,7 +180,7 @@ pub fn simulateProgram(gpa: std.mem.Allocator, program: []const Op, raw_stdout: 
                             const s = mem[buf .. buf + count];
                             switch (fd) {
                                 1 => try stdout.writeAll(s),
-                                2 => std.debug.print("{s}", .{s}),
+                                2 => try stderr.writeAll(s),
                                 else => std.debug.panic("unknown file descriptor {d}", .{fd}),
                             }
                             try stack.append(arg3);

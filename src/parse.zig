@@ -29,7 +29,12 @@ fn stringLitEnd(line: []const u8, start: usize, quote: u8) ?usize {
     return null;
 }
 
-fn parseEscapes(gpa: std.mem.Allocator, loc: Op.Location, raw_text: []const u8) ![]const u8 {
+fn parseEscapes(
+    gpa: std.mem.Allocator,
+    loc: Op.Location,
+    raw_text: []const u8,
+    stderr: anytype,
+) ![]const u8 {
     var token_text = try std.ArrayList(u8).initCapacity(gpa, raw_text.len);
 
     var offset: usize = 0;
@@ -54,7 +59,7 @@ fn parseEscapes(gpa: std.mem.Allocator, loc: Op.Location, raw_text: []const u8) 
                         inline else => |i| i,
                     },
                 };
-                std.debug.print("{}: ERROR: could not parse escape sequence\n", .{err_loc});
+                try stderr.print("{}: ERROR: could not parse escape sequence\n", .{err_loc});
                 return error.Parse;
             },
         }
@@ -74,6 +79,7 @@ fn lexLines(
     tokens: *std.ArrayList(Token),
     file_path: []const u8,
     text: []const u8,
+    stderr: anytype,
 ) !void {
     var row: usize = 0;
     var string_lit = std.ArrayList(u8).init(gpa);
@@ -120,46 +126,46 @@ fn lexLines(
                         break;
                     }
                     if (row >= line_starts.items.len) {
-                        std.debug.print("{}: ERROR: unclosed string literal\n", .{loc});
+                        try stderr.print("{}: ERROR: unclosed string literal\n", .{loc});
                         return error.Parse;
                     }
                     const token_text = try string_lit.toOwnedSlice();
                     try tokens.append(.{
                         .loc = loc,
-                        .value = .{ .str = try parseEscapes(gpa, loc, token_text) },
+                        .value = .{ .str = try parseEscapes(gpa, loc, token_text, stderr) },
                     });
                     it = std.mem.tokenize(u8, line[col_end + 1 ..], &std.ascii.whitespace);
                 },
                 '\'' => {
                     const col_end = stringLitEnd(line, col + 1, '\'') orelse {
-                        std.debug.print("{}: ERROR: unclosed character literal\n", .{loc});
+                        try stderr.print("{}: ERROR: unclosed character literal\n", .{loc});
                         return error.Parse;
                     };
                     const raw_text = line[col + 1 .. col_end];
-                    const utf8 = try parseEscapes(gpa, loc, raw_text);
+                    const utf8 = try parseEscapes(gpa, loc, raw_text, stderr);
                     if (utf8.len == 0) {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: invalid character literal '{s}': no data\n",
                             .{ loc, raw_text },
                         );
                         return error.Parse;
                     }
                     const bs_len = std.unicode.utf8ByteSequenceLength(utf8[0]) catch {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: invalid character literal '{s}': not valid UTF-8\n",
                             .{ loc, raw_text },
                         );
                         return error.Parse;
                     };
                     if (utf8.len != bs_len) {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: invalid character literal '{s}': too {s}\n",
                             .{ loc, raw_text, if (utf8.len > bs_len) "long" else "short" },
                         );
                         return error.Parse;
                     }
                     const ch = std.unicode.utf8Decode(utf8) catch |e| {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: invalid character literal: {s}\n",
                             .{ loc, @errorName(e) },
                         );
@@ -192,7 +198,12 @@ fn readLine(in: std.fs.File.Reader, buf: *std.ArrayList(u8)) !?[]const u8 {
     return buf.items;
 }
 
-fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) !std.ArrayList(Token) {
+fn parse(
+    gpa: std.mem.Allocator,
+    in: std.fs.File.Reader,
+    file_path: []const u8,
+    stderr: anytype,
+) !std.ArrayList(Token) {
     var line_buf = std.ArrayList(u8).init(gpa);
     defer line_buf.deinit();
     var tokens = std.ArrayList(Token).init(gpa);
@@ -204,7 +215,7 @@ fn parse(gpa: std.mem.Allocator, in: std.fs.File.Reader, file_path: []const u8) 
         tokens.deinit();
     }
     const contents = try in.readAllAlloc(gpa, std.math.maxInt(usize));
-    try lexLines(gpa, &tokens, file_path, contents);
+    try lexLines(gpa, &tokens, file_path, contents, stderr);
     return tokens;
 }
 
@@ -231,6 +242,7 @@ fn compile(
     arena: std.mem.Allocator,
     tokens: *std.ArrayList(Token),
     include_paths: []const []const u8,
+    stderr: anytype,
 ) Error!Program {
     var stack = std.ArrayList(usize).init(arena);
     defer stack.deinit();
@@ -261,7 +273,7 @@ fn compile(
                     }
                     std.mem.reverse(Token, tokens.items[start..]);
                 } else {
-                    std.debug.print("{}: unknown word '{s}'\n", .{ token.loc, word });
+                    try stderr.print("{}: unknown word '{s}'\n", .{ token.loc, word });
                     return error.Sema;
                 }
             },
@@ -294,7 +306,7 @@ fn compile(
                             targ.* = ip + 1;
                         },
                         else => {
-                            std.debug.print(
+                            try stderr.print(
                                 "{}: ERROR: `else` can only be used in `if`-blocks\n",
                                 .{token.loc},
                             );
@@ -329,7 +341,7 @@ fn compile(
                             targ.* = ip + 1;
                         },
                         else => {
-                            std.debug.print(
+                            try stderr.print(
                                 "{}: ERROR: `end` can only close `if`-blocks\n",
                                 .{token.loc},
                             );
@@ -340,7 +352,7 @@ fn compile(
                 },
                 .macro => {
                     const name_tok = tokens.popOrNull() orelse {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: expected macro name but found end of input\n",
                             .{token.loc},
                         );
@@ -349,7 +361,7 @@ fn compile(
                     const name = switch (name_tok.value) {
                         .word => |w| w,
                         else => {
-                            std.debug.print(
+                            try stderr.print(
                                 "{}: ERROR: expected macro name to be {s} but found {s}\n",
                                 .{
                                     name_tok.loc,
@@ -361,14 +373,14 @@ fn compile(
                         },
                     };
                     if (Intrinsic.names.get(name) != null) {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: redefinition of intrinsic '{s}'. Please choose a different macro name.\n",
                             .{ name_tok.loc, name },
                         );
                         return error.Sema;
                     }
                     if (try macros.fetchPut(name, Macro.init(token.loc, arena))) |old| {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: redefinition of existing macro '{s}'\n",
                             .{ name_tok.loc, old.key },
                         );
@@ -399,21 +411,21 @@ fn compile(
                         }
                     }
                     if (!was_end) {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: expected 'end' at end of macro definition, got ",
                             .{token.loc},
                         );
                         if (last_token) |t| {
-                            std.debug.print("{}\n", .{t.value});
+                            try stderr.print("{}\n", .{t.value});
                         } else {
-                            std.debug.print("end of input\n", .{});
+                            try stderr.print("end of input\n", .{});
                         }
                         return error.Sema;
                     }
                 },
                 .include => {
                     const path_tok = tokens.popOrNull() orelse {
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: expected include path but found end of input\n",
                             .{token.loc},
                         );
@@ -422,7 +434,7 @@ fn compile(
                     const path = switch (path_tok.value) {
                         .str => |s| s,
                         else => {
-                            std.debug.print(
+                            try stderr.print(
                                 "{}: ERROR: expected include path to be {s} but found {s}\n",
                                 .{
                                     path_tok.loc,
@@ -446,14 +458,14 @@ fn compile(
                                 break :doInclude f;
                             } else |_| continue;
                         }
-                        std.debug.print(
+                        try stderr.print(
                             "{}: ERROR: file '{s}' could not be opened\n",
                             .{ path_tok.loc, path },
                         );
                         return error.Sema;
                     };
                     defer include_file.close();
-                    const included_tokens = try parse(arena, include_file.reader(), path);
+                    const included_tokens = try parse(arena, include_file.reader(), path, stderr);
                     std.mem.reverse(Token, included_tokens.items);
                     try tokens.appendSlice(included_tokens.items);
                 },
@@ -462,7 +474,7 @@ fn compile(
     }
 
     if (stack.items.len > 0) {
-        std.debug.print("{}: ERROR: unclosed block\n", .{program.items[stack.pop()].loc});
+        try stderr.print("{}: ERROR: unclosed block\n", .{program.items[stack.pop()].loc});
         return error.Sema;
     }
     return Program.init(try program.toOwnedSlice());
@@ -472,21 +484,23 @@ pub const Error = SemaError ||
     ParseError ||
     std.fs.File.OpenError ||
     std.fs.File.ReadError ||
+    std.fs.File.WriteError ||
     error{ StreamTooLong, EndOfStream };
 
 pub fn loadProgramFromFile(
     gpa: std.mem.Allocator,
     file_path: []const u8,
     include_paths: []const []const u8,
+    stderr: anytype,
 ) Error!Program {
     const f = std.fs.cwd().openFile(file_path, .{}) catch |e| {
-        std.debug.print("[ERROR] Failed to open '{s}'!\n", .{file_path});
+        try stderr.print("[ERROR] Failed to open '{s}'!\n", .{file_path});
         return e;
     };
     defer f.close();
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
-    var tokens = try parse(arena.allocator(), f.reader(), file_path);
-    return try compile(gpa, arena.allocator(), &tokens, include_paths);
+    var tokens = try parse(arena.allocator(), f.reader(), file_path, stderr);
+    return try compile(gpa, arena.allocator(), &tokens, include_paths, stderr);
 }
