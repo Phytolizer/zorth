@@ -18,7 +18,7 @@ fn expectedPath(gpa: std.mem.Allocator, path: []const u8) ![]const u8 {
     );
 }
 
-fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
+fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     std.debug.print("[INFO] Testing {s}\n", .{path});
     var sim_out_buf = std.ArrayList(u8).init(gpa);
     defer sim_out_buf.deinit();
@@ -76,16 +76,21 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8) TestError!void {
     if (sim_fail) return error.SimFail;
 }
 
-fn record(gpa: std.mem.Allocator, path: []const u8) TestError!void {
+const RecordMode = enum { sim, com };
+
+fn record(gpa: std.mem.Allocator, path: []const u8, mode: RecordMode) TestError!void {
     var sim_out_buf = std.ArrayList(u8).init(gpa);
     defer sim_out_buf.deinit();
     const sim_out = sim_out_buf.writer();
     const stderr = std.io.getStdErr().writer();
-    const sim_cmd = [_][]const u8{ "porth", "sim", path };
+    const run_cmd = switch (mode) {
+        .sim => &[_][]const u8{ "porth", "sim", path },
+        .com => &[_][]const u8{ "porth", "com", "-s", "-r", path },
+    };
     std.debug.print("[CMD]", .{});
-    cmd.printQuoted(&sim_cmd);
+    cmd.printQuoted(run_cmd);
     std.debug.print("\n", .{});
-    _ = try driver.run(gpa, &sim_cmd, stderr, sim_out);
+    _ = try driver.run(gpa, run_cmd, stderr, sim_out);
     const txt_path = try expectedPath(gpa, path);
     defer gpa.free(txt_path);
     std.debug.print("[INFO] Saving output to {s}\n", .{txt_path});
@@ -95,7 +100,8 @@ fn record(gpa: std.mem.Allocator, path: []const u8) TestError!void {
 fn walkTests(
     gpa: std.mem.Allocator,
     folder: []const u8,
-    comptime f: fn (std.mem.Allocator, []const u8) TestError!void,
+    arg: anytype,
+    comptime f: fn (std.mem.Allocator, []const u8, @TypeOf(arg)) TestError!void,
 ) !void {
     const dir = std.fs.cwd().openIterableDir(folder, .{}) catch |e| {
         std.debug.print("failed to open 'tests': {s}\n", .{@errorName(e)});
@@ -114,14 +120,14 @@ fn walkTests(
         {
             const full_path = try path.join(gpa, &.{ folder, ent.path });
             defer gpa.free(full_path);
-            f(gpa, full_path) catch |e| switch (e) {
+            f(gpa, full_path, arg) catch |e| switch (e) {
                 error.SimFail => sim_failed += 1,
                 error.ComFail => com_failed += 1,
                 else => return e,
             };
         };
 
-    if (f == runTest) {
+    if (@TypeOf(f) == @TypeOf(runTest)) {
         std.debug.print(
             "Simulation failed: {d}, Compilation failed: {d}\n",
             .{ sim_failed, com_failed },
@@ -139,7 +145,7 @@ fn usage(writer: anytype, exe_name: []const u8) !void {
         \\  -f <folder>     Set the folder with tests. (Default ./tests)
         \\SUBCOMMANDS:
         \\  test            Run tests. (Default)
-        \\  record          Update the expected output.
+        \\  record [-com]   Update the expected output. (Use compiled mode if `-com`.)
         \\  help            Show this help.
         \\
     , .{exe_name});
@@ -175,10 +181,20 @@ fn run() !void {
         }
     }
 
-    if (std.mem.eql(u8, subcmd, "record"))
-        try walkTests(gpa, folder, record)
-    else if (std.mem.eql(u8, subcmd, "test"))
-        try walkTests(gpa, folder, runTest)
+    if (std.mem.eql(u8, subcmd, "record")) {
+        var mode = RecordMode.sim;
+        while (shift(&argp)) |arg| {
+            if (std.mem.eql(u8, arg, "-com")) {
+                mode = .com;
+            } else {
+                usage(stderr, exe_name) catch unreachable;
+                std.debug.print("[ERROR] unknown flag '{s}'\n", .{arg});
+                return error.usage;
+            }
+        }
+        try walkTests(gpa, folder, mode, record);
+    } else if (std.mem.eql(u8, subcmd, "test"))
+        try walkTests(gpa, folder, {}, runTest)
     else if (std.mem.eql(u8, subcmd, "help"))
         try usage(std.io.getStdOut().writer(), exe_name)
     else {
