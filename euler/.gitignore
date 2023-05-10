@@ -1,0 +1,4 @@
+*
+!.gitignore
+!*.porth
+!*.expected.txt
