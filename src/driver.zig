@@ -12,6 +12,7 @@ fn usage(out: anytype, program: []const u8) void {
         \\Usage: {s} [OPTIONS] <SUBCOMMAND> [ARGS]
         \\OPTIONS:
         \\  -I <path>               Add to the include search path
+        \\  -E <expansion-limit>    Set the expansion limit for include/macro (default {d})
         \\SUBCOMMANDS:
         \\  sim <file>              Simulate the program
         \\  com [OPTIONS] <file>    Compile the program
@@ -21,11 +22,12 @@ fn usage(out: anytype, program: []const u8) void {
         \\    -s                    Silent mode; don't print log messages
         \\  help                    Show this help
         \\
-    , .{program}) catch {};
+    , .{ program, @import("opts").expansion_limit }) catch {};
 }
 
 pub const Error = error{Usage} ||
     parse.Error ||
+    std.fmt.ParseIntError ||
     std.fs.File.WriteError ||
     std.ChildProcess.SpawnError ||
     cmd.CallError;
@@ -48,6 +50,7 @@ pub fn run(
     defer include_paths.deinit();
     include_paths.appendSliceAssumeCapacity(builtin_include_paths);
 
+    var expansion_limit = @import("opts").expansion_limit;
     var subcommand_arg: ?[]const u8 = null;
     while (shift(&argp)) |arg| {
         if (std.mem.eql(u8, arg, "-I")) {
@@ -57,6 +60,13 @@ pub fn run(
                 return error.Usage;
             };
             try include_paths.append(path);
+        } else if (std.mem.eql(u8, arg, "-E")) {
+            const new_limit = shift(&argp) orelse {
+                usage(stderr, program_name);
+                stderr.print("[ERROR] no argument provided for -E\n", .{}) catch unreachable;
+                return error.Usage;
+            };
+            expansion_limit = try std.fmt.parseInt(usize, new_limit, 10);
         } else {
             subcommand_arg = arg;
             break;
@@ -75,7 +85,13 @@ pub fn run(
             stderr.print("[ERROR] no input file\n", .{}) catch unreachable;
             return error.Usage;
         };
-        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items, stderr);
+        const program = try parse.loadProgramFromFile(
+            gpa,
+            file_path,
+            include_paths.items,
+            expansion_limit,
+            stderr,
+        );
         defer program.deinit(gpa);
         try sim.simulateProgram(gpa, program.items, stderr, stdout);
     } else if (std.mem.eql(u8, subcommand, "com")) {
@@ -104,7 +120,13 @@ pub fn run(
             stderr.print("[ERROR] no input file\n", .{}) catch unreachable;
             return error.Usage;
         };
-        const program = try parse.loadProgramFromFile(gpa, file_path, include_paths.items, stderr);
+        const program = try parse.loadProgramFromFile(
+            gpa,
+            file_path,
+            include_paths.items,
+            expansion_limit,
+            stderr,
+        );
         defer program.deinit(gpa);
         const path = std.fs.path;
         var basename_alloc = false;

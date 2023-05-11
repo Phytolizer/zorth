@@ -202,20 +202,16 @@ fn parse(
     gpa: std.mem.Allocator,
     in: std.fs.File.Reader,
     file_path: []const u8,
+    expanded_depth: usize,
     stderr: anytype,
 ) !std.ArrayList(Token) {
     var line_buf = std.ArrayList(u8).init(gpa);
     defer line_buf.deinit();
     var tokens = std.ArrayList(Token).init(gpa);
-    errdefer {
-        for (tokens.items) |tok| switch (tok.value) {
-            .str, .word => |s| gpa.free(s),
-            else => {},
-        };
-        tokens.deinit();
-    }
     const contents = try in.readAllAlloc(gpa, std.math.maxInt(usize));
     try lexLines(gpa, &tokens, file_path, contents, stderr);
+    for (tokens.items) |*tok|
+        tok.expanded_depth = expanded_depth;
     return tokens;
 }
 
@@ -235,6 +231,17 @@ const Macro = struct {
 
 const SemaError = error{Sema} || std.mem.Allocator.Error;
 
+fn expandMacro(
+    gpa: std.mem.Allocator,
+    macro: Macro,
+    expanded_depth: usize,
+) ![]Token {
+    const result = try gpa.dupe(Token, macro.tokens.items);
+    for (result) |*token|
+        token.expanded_depth = expanded_depth;
+    return result;
+}
+
 fn compile(
     // persistent
     gpa: std.mem.Allocator,
@@ -242,6 +249,7 @@ fn compile(
     arena: std.mem.Allocator,
     tokens: *std.ArrayList(Token),
     include_paths: []const []const u8,
+    expansion_limit: usize,
     stderr: anytype,
 ) Error!Program {
     var stack = std.ArrayList(usize).init(arena);
@@ -266,14 +274,18 @@ fn compile(
                     try program.append(Op.init(token.loc, .{ .intrinsic = intrinsic }));
                     ip += 1;
                 } else if (macros.get(word)) |macro| {
-                    const start = tokens.items.len;
-                    try tokens.ensureTotalCapacity(start + macro.tokens.items.len);
-                    for (macro.tokens.items) |src| {
-                        tokens.appendAssumeCapacity(src);
+                    if (token.expanded_depth >= expansion_limit) {
+                        try stderr.print(
+                            "{}: ERROR: macro exceeded expansion limit ({d})\n",
+                            .{ token.loc, token.expanded_depth },
+                        );
+                        return error.Sema;
                     }
-                    std.mem.reverse(Token, tokens.items[start..]);
+                    const macro_tokens = try expandMacro(arena, macro, token.expanded_depth + 1);
+                    std.mem.reverse(Token, macro_tokens);
+                    try tokens.appendSlice(macro_tokens);
                 } else {
-                    try stderr.print("{}: unknown word '{s}'\n", .{ token.loc, word });
+                    try stderr.print("{}: ERROR: unknown word '{s}'\n", .{ token.loc, word });
                     return error.Sema;
                 }
             },
@@ -445,6 +457,13 @@ fn compile(
                             return error.Sema;
                         },
                     };
+                    if (token.expanded_depth >= expansion_limit) {
+                        try stderr.print(
+                            "{}: ERROR: include exceeded expansion limit ({d})\n",
+                            .{ token.loc, token.expanded_depth },
+                        );
+                        return error.Sema;
+                    }
                     var include_file = doInclude: {
                         if (std.fs.path.isAbsolute(path)) {
                             if (std.fs.openFileAbsolute(path, .{})) |f|
@@ -465,7 +484,13 @@ fn compile(
                         return error.Sema;
                     };
                     defer include_file.close();
-                    const included_tokens = try parse(arena, include_file.reader(), path, stderr);
+                    const included_tokens = try parse(
+                        arena,
+                        include_file.reader(),
+                        path,
+                        token.expanded_depth + 1,
+                        stderr,
+                    );
                     std.mem.reverse(Token, included_tokens.items);
                     try tokens.appendSlice(included_tokens.items);
                 },
@@ -491,6 +516,7 @@ pub fn loadProgramFromFile(
     gpa: std.mem.Allocator,
     file_path: []const u8,
     include_paths: []const []const u8,
+    expansion_limit: usize,
     stderr: anytype,
 ) Error!Program {
     const f = std.fs.cwd().openFile(file_path, .{}) catch |e| {
@@ -501,6 +527,13 @@ pub fn loadProgramFromFile(
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
-    var tokens = try parse(arena.allocator(), f.reader(), file_path, stderr);
-    return try compile(gpa, arena.allocator(), &tokens, include_paths, stderr);
+    var tokens = try parse(arena.allocator(), f.reader(), file_path, 0, stderr);
+    return try compile(
+        gpa,
+        arena.allocator(),
+        &tokens,
+        include_paths,
+        expansion_limit,
+        stderr,
+    );
 }

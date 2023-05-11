@@ -80,7 +80,15 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
     };
 }
 
-fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
+fn simCmd(folder: []const u8, path: []const u8) [5][]const u8 {
+    return [_][]const u8{ "porth", "-I", folder, "sim", path };
+}
+
+fn comCmd(folder: []const u8, path: []const u8) [7][]const u8 {
+    return [_][]const u8{ "porth", "-I", folder, "com", "-s", "-r", path };
+}
+
+fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void) TestError!void {
     std.debug.print("[INFO] Testing {s}\n", .{path});
 
     const expected_path = try expectedPath(gpa, path);
@@ -90,7 +98,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     const sim_out = sim_out_buf.writer();
     var sim_err_buf = std.ArrayList(u8).init(gpa);
     const sim_err = sim_err_buf.writer();
-    const sim_cmd = [_][]const u8{ "porth", "sim", path };
+    const sim_cmd = simCmd(folder, path);
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&sim_cmd);
     std.debug.print("\n", .{});
@@ -127,7 +135,7 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     const com_out = com_out_buf.writer();
     var com_err_buf = std.ArrayList(u8).init(gpa);
     const com_err = com_err_buf.writer();
-    const com_cmd = [_][]const u8{ "porth", "com", "-s", "-r", path };
+    const com_cmd = comCmd(folder, path);
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&com_cmd);
     std.debug.print("\n", .{});
@@ -177,14 +185,19 @@ fn writeExpected(path: []const u8, expected: Expectation) !void {
 
 const RecordMode = enum { sim, com };
 
-fn record(gpa: std.mem.Allocator, path: []const u8, mode: RecordMode) TestError!void {
+fn record(
+    gpa: std.mem.Allocator,
+    folder: []const u8,
+    path: []const u8,
+    mode: RecordMode,
+) TestError!void {
     var out_buf = std.ArrayList(u8).init(gpa);
     const out = out_buf.writer();
     var err_buf = std.ArrayList(u8).init(gpa);
     const err = err_buf.writer();
     const run_cmd = switch (mode) {
-        .sim => &[_][]const u8{ "porth", "sim", path },
-        .com => &[_][]const u8{ "porth", "com", "-s", "-r", path },
+        .sim => &simCmd(folder, path),
+        .com => &comCmd(folder, path),
     };
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(run_cmd);
@@ -203,7 +216,7 @@ fn walkTests(
     gpa: std.mem.Allocator,
     folder: []const u8,
     arg: anytype,
-    comptime f: fn (std.mem.Allocator, []const u8, @TypeOf(arg)) TestError!void,
+    comptime f: fn (std.mem.Allocator, []const u8, []const u8, @TypeOf(arg)) TestError!void,
 ) !void {
     const dir = std.fs.cwd().openIterableDir(folder, .{}) catch |e| {
         std.debug.print("failed to open 'tests': {s}\n", .{@errorName(e)});
@@ -220,7 +233,7 @@ fn walkTests(
             std.mem.eql(u8, path.extension(ent.basename), ".porth"))
         {
             const full_path = try path.join(gpa, &.{ folder, ent.path });
-            f(gpa, full_path, arg) catch |e| switch (e) {
+            f(gpa, folder, full_path, arg) catch |e| switch (e) {
                 error.SimFail => sim_failed += 1,
                 error.ComFail => com_failed += 1,
                 else => return e,

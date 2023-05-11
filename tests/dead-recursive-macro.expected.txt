@@ -1,0 +1,6 @@
+: returncode 0
+: stdout 73
+The above macro is recursive, but it is OK because it is never expanded.
+
+: stderr 0
+

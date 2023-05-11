@@ -1,0 +1,6 @@
+: returncode 1
+: stdout 0
+
+: stderr 93
+tests/error-directly-recursive-macro.porth:2:3: ERROR: macro exceeded expansion limit (1000)
+

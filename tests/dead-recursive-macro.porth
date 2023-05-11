@@ -1,0 +1,7 @@
+include "std.porth"
+
+macro dead
+  dead
+end
+
+"The above macro is recursive, but it is OK because it is never expanded.\n" stdout write

@@ -14,9 +14,15 @@ pub fn build(b: *std.Build) void {
         "str_capacity",
         "Maximum memory for Porth string literals, default 640KiB",
     ) orelse 640 * 1024;
+    const expansion_limit = b.option(
+        usize,
+        "expansion_limit",
+        "Maximum depth of macro/include expansion, default 1000",
+    ) orelse 1000;
     const opts = b.addOptions();
     opts.addOption(usize, "mem_capacity", mem_capacity);
     opts.addOption(usize, "str_capacity", str_capacity);
+    opts.addOption(usize, "expansion_limit", expansion_limit);
     const opts_mod = opts.createModule();
 
     const cmd = b.addModule("porth-cmd", .{

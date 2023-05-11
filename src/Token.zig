@@ -4,6 +4,7 @@ const Keyword = @import("keyword.zig").Keyword;
 
 loc: Op.Location,
 value: Value,
+expanded_depth: usize = 0,
 
 pub const Value = union(enum) {
     word: []const u8,

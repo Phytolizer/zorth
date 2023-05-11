@@ -1,6 +1,6 @@
 : returncode 1
 : stdout 0
 
-: stderr 60
-tests/error-undefined-name.porth:1:1: unknown word 'abcdef'
+: stderr 67
+tests/error-undefined-name.porth:1:1: ERROR: unknown word 'abcdef'
 
