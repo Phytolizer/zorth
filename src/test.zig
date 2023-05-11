@@ -98,7 +98,7 @@ fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void
     const sim_out = sim_out_buf.writer();
     var sim_err_buf = std.ArrayList(u8).init(gpa);
     const sim_err = sim_err_buf.writer();
-    const sim_cmd = simCmd(folder, path);
+    const sim_cmd = simCmd(folder, try gpa.dupe(u8, path));
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&sim_cmd);
     std.debug.print("\n", .{});
