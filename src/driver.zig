@@ -98,7 +98,6 @@ pub fn run(
         defer gpa.free(porth_args);
         porth_args[0] = program_name;
         std.mem.copy([]const u8, porth_args[1..], argp);
-        defer gpa.free(porth_args);
         try sim.simulateProgram(
             gpa,
             program.items,
