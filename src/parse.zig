@@ -259,10 +259,13 @@ fn compile(
 
     var program = std.ArrayList(Op).init(gpa);
     errdefer {
-        for (program.items) |op| switch (op.code) {
-            .push_str => |s| gpa.free(s),
-            else => {},
-        };
+        for (program.items) |op| {
+            gpa.free(op.loc.file_path);
+            switch (op.code) {
+                .push_str => |s| gpa.free(s),
+                else => {},
+            }
+        }
         program.deinit();
     }
 
@@ -502,6 +505,12 @@ fn compile(
         try stderr.print("{}: ERROR: unclosed block\n", .{program.items[stack.pop()].loc});
         return error.Sema;
     }
+
+    // copy program file paths to avoid UAF
+    for (program.items) |*tok| {
+        tok.loc.file_path = try gpa.dupe(u8, tok.loc.file_path);
+    }
+
     return Program.init(try program.toOwnedSlice());
 }
 
