@@ -1,0 +1,8 @@
+include "std.porth"
+
+2drop
+while dup 0 > do
+  dup strlen swap
+  stdout write drop
+  "\n" stdout write drop
+end

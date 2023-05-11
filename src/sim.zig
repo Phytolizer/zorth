@@ -14,6 +14,7 @@ fn binaryOp(
 pub fn simulateProgram(
     gpa: std.mem.Allocator,
     program: []const Op,
+    args: []const []const u8,
     stderr: anytype,
     raw_stdout: anytype,
 ) !void {
@@ -23,13 +24,29 @@ pub fn simulateProgram(
     defer stdout_buf.flush() catch {};
     const stdout = stdout_buf.writer();
     const opts = @import("opts");
-    var mem = try gpa.alloc(u8, opts.mem_capacity + opts.str_capacity);
+    const nul_padding = 1; // ASCII NUL terminator
+    var mem = try gpa.alloc(u8, opts.mem_capacity + opts.str_capacity + nul_padding);
     defer gpa.free(mem);
     @memset(mem, 0);
 
     var str_offsets = std.AutoArrayHashMap(usize, usize).init(gpa);
     defer str_offsets.deinit();
-    var str_size: usize = 0;
+    var str_size: usize = nul_padding;
+
+    try stack.append(0);
+    var args_it = std.mem.reverseIterator(args);
+    while (args_it.next()) |arg| {
+        std.mem.copy(u8, mem[str_size .. str_size + arg.len], arg);
+        mem[str_size + arg.len] = 0;
+        try stack.append(str_size);
+        str_size += arg.len + 1;
+        if (str_size >= opts.str_capacity + nul_padding)
+            std.debug.panic(
+                "string buffer overflow by {d} bytes",
+                .{str_size - opts.str_capacity - nul_padding},
+            );
+    }
+    try stack.append(@intCast(u64, args.len));
 
     var ip: usize = 0;
     while (ip < program.len) {
@@ -48,8 +65,11 @@ pub fn simulateProgram(
                     for (s, mem[str_size .. str_size + s.len]) |src, *dst|
                         dst.* = src;
                     str_size += s.len;
-                    if (str_size >= opts.str_capacity)
-                        std.debug.panic("string buffer overflow by {d} bytes", .{str_size - opts.str_capacity});
+                    if (str_size >= opts.str_capacity + nul_padding)
+                        std.debug.panic(
+                            "string buffer overflow by {d} bytes",
+                            .{str_size - opts.str_capacity - nul_padding},
+                        );
                     break :blk addr;
                 };
                 try stack.append(@intCast(u64, addr));

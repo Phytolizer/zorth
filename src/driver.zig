@@ -93,7 +93,12 @@ pub fn run(
             stderr,
         );
         defer program.deinit(gpa);
-        try sim.simulateProgram(gpa, program.items, stderr, stdout);
+        const porth_args = try gpa.alloc([]const u8, argp.len + 1);
+        defer gpa.free(porth_args);
+        porth_args[0] = program_name;
+        std.mem.copy([]const u8, porth_args[1..], argp);
+        defer gpa.free(porth_args);
+        try sim.simulateProgram(gpa, program.items, porth_args, stderr, stdout);
     } else if (std.mem.eql(u8, subcommand, "com")) {
         var run_flag = false;
         var silent_flag = false;
