@@ -20,16 +20,11 @@ fn expectedPath(gpa: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 const Expectation = struct {
+    args: []const []const u8,
     returncode: u8,
     in: []const u8,
     output: []const u8,
     err: []const u8,
-
-    pub fn deinit(self: @This(), gpa: std.mem.Allocator) void {
-        gpa.free(self.in);
-        gpa.free(self.output);
-        gpa.free(self.err);
-    }
 };
 
 const FieldKind = enum {
@@ -53,10 +48,14 @@ fn readField(
     in: std.fs.File.Reader,
     gpa: std.mem.Allocator,
     comptime kind: FieldKind,
-    comptime field_name: []const u8,
+    field_name: []const u8,
 ) !kind.Type() {
     const line = (try in.readUntilDelimiterOrEofAlloc(gpa, '\n', std.math.maxInt(usize))).?;
-    const field = ":" ++ comptime kind.text() ++ " " ++ field_name ++ " ";
+    const field = try std.fmt.allocPrint(
+        gpa,
+        ":" ++ comptime kind.text() ++ " {s} ",
+        .{field_name},
+    );
     if (!std.mem.startsWith(u8, line, field)) {
         std.debug.panic("illegal line '{'}'\n", .{std.zig.fmtEscapes(line)});
     }
@@ -90,10 +89,21 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
     const in = file.reader();
 
     const returncode = @intCast(u8, try readField(in, gpa, .int, "returncode"));
+    const argc = try readField(in, gpa, .int, "argc");
+    var args = try std.ArrayList([]const u8).initCapacity(gpa, argc);
+    for (0..argc) |i| {
+        args.appendAssumeCapacity(try readField(
+            in,
+            gpa,
+            .blob,
+            try std.fmt.allocPrint(gpa, "arg{d}", .{i}),
+        ));
+    }
     const stdin = try readField(in, gpa, .blob, "stdin");
     const output = try readField(in, gpa, .blob, "stdout");
     const err = try readField(in, gpa, .blob, "stderr");
     return Expectation{
+        .args = try args.toOwnedSlice(),
         .returncode = returncode,
         .in = stdin,
         .output = output,
@@ -109,7 +119,12 @@ fn comCmd(folder: []const u8, path: []const u8) [7][]const u8 {
     return [_][]const u8{ "porth", "-I", folder, "com", "-s", "-r", path };
 }
 
-fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void) TestError!void {
+fn runTest(
+    gpa: std.mem.Allocator,
+    folder: []const u8,
+    path: []const u8,
+    _: void,
+) TestError!void {
     std.debug.print("[INFO] Testing {s}\n", .{path});
 
     const expected_path = try expectedPath(gpa, path);
@@ -201,7 +216,7 @@ fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void
 fn writeField(
     out: anytype,
     comptime kind: FieldKind,
-    comptime field_name: []const u8,
+    field_name: []const u8,
     value: kind.Type(),
 ) !void {
     switch (kind) {
@@ -210,38 +225,66 @@ fn writeField(
     }
 }
 
-fn writeExpected(path: []const u8, expected: Expectation) !void {
+fn writeExpected(gpa: std.mem.Allocator, path: []const u8, expected: Expectation) !void {
     const file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
     const out = file.writer();
 
     try writeField(out, .int, "returncode", expected.returncode);
+    try writeField(out, .int, "argc", expected.args.len);
+    for (expected.args, 0..) |arg, i| {
+        try writeField(
+            out,
+            .blob,
+            try std.fmt.allocPrint(gpa, "arg{d}", .{i}),
+            arg,
+        );
+    }
     try writeField(out, .blob, "stdin", expected.in);
     try writeField(out, .blob, "stdout", expected.output);
     try writeField(out, .blob, "stderr", expected.err);
 }
 
-const RecordMode = enum { sim, com };
+const RecordOpts = struct {
+    mode: Mode,
+    args: []const []const u8 = &.{},
+    in: []const u8 = "",
+
+    pub const Mode = enum { sim, com };
+};
 
 fn record(
     gpa: std.mem.Allocator,
     folder: []const u8,
     path: []const u8,
-    mode: RecordMode,
+    opts: RecordOpts,
 ) TestError!void {
     var out_buf = std.ArrayList(u8).init(gpa);
     const out = out_buf.writer();
     var err_buf = std.ArrayList(u8).init(gpa);
     const err = err_buf.writer();
-    const run_cmd = switch (mode) {
-        .sim => &simCmd(folder, try gpa.dupe(u8, path)),
-        .com => &comCmd(folder, path),
+    const run_cmd = switch (opts.mode) {
+        .sim => blk: {
+            const base = simCmd(folder, try gpa.dupe(u8, path));
+            break :blk try std.mem.concat(
+                gpa,
+                []const u8,
+                &[_][]const []const u8{ &base, opts.args },
+            );
+        },
+        .com => blk: {
+            const base = comCmd(folder, try gpa.dupe(u8, path));
+            break :blk try std.mem.concat(
+                gpa,
+                []const u8,
+                &[_][]const []const u8{ &base, opts.args },
+            );
+        },
     };
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(run_cmd);
     std.debug.print("\n", .{});
-    // TODO: allow putting stdin here
-    var stdin = std.io.fixedBufferStream(&[_]u8{});
+    var stdin = std.io.fixedBufferStream(opts.in);
     const code = driver.run(
         gpa,
         run_cmd,
@@ -251,7 +294,8 @@ fn record(
     ) catch 1;
     const expected_path = try expectedPath(gpa, path);
     std.debug.print("[INFO] Saving output to {s}\n", .{expected_path});
-    try writeExpected(expected_path, .{
+    try writeExpected(gpa, expected_path, .{
+        .args = opts.args,
         .returncode = code,
         .in = &.{},
         .output = out_buf.items,
@@ -345,7 +389,7 @@ fn run() !void {
     defer arena.deinit();
 
     if (std.mem.eql(u8, subcmd, "record")) {
-        var mode = RecordMode.sim;
+        var mode = RecordOpts.Mode.sim;
         while (shift(&argp)) |arg| {
             if (std.mem.eql(u8, arg, "-com")) {
                 mode = .com;
@@ -355,7 +399,7 @@ fn run() !void {
                 return error.usage;
             }
         }
-        try walkTests(arena.allocator(), folder, mode, record);
+        try walkTests(arena.allocator(), folder, RecordOpts{ .mode = mode }, record);
     } else if (std.mem.eql(u8, subcmd, "test"))
         try walkTests(arena.allocator(), folder, {}, runTest)
     else if (std.mem.eql(u8, subcmd, "help"))
