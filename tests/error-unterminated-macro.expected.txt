@@ -1,0 +1,6 @@
+: returncode 1
+: stdout 0
+
+: stderr 104
+tests/error-unterminated-macro.porth:1:1: ERROR: expected 'end' at end of macro definition, got 'macro'
+

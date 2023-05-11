@@ -1,0 +1,6 @@
+: returncode 1
+: stdout 0
+
+: stderr 105
+tests/error-include-non-string.porth:1:9: ERROR: expected include path to be a word but found an integer
+

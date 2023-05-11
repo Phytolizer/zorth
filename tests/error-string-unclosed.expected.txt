@@ -1,0 +1,6 @@
+: returncode 1
+: stdout 0
+
+: stderr 70
+tests/error-string-unclosed.porth:1:1: ERROR: unclosed string literal
+

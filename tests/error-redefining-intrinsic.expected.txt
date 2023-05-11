@@ -1,0 +1,6 @@
+: returncode 1
+: stdout 0
+
+: stderr 120
+tests/error-redefining-intrinsic.porth:1:7: ERROR: redefinition of intrinsic '+'. Please choose a different macro name.
+

@@ -7,13 +7,14 @@ const path_mod = @import("porth-path");
 const TestError = error{ SimFail, ComFail, BothFail, TestFail } ||
     std.mem.Allocator.Error ||
     std.ChildProcess.SpawnError ||
+    std.fmt.ParseIntError ||
     driver.Error ||
     error{Unseekable};
 
 fn expectedPath(gpa: std.mem.Allocator, path: []const u8) ![]const u8 {
     return try std.fmt.allocPrint(
         gpa,
-        "{s}.expected.bin",
+        "{s}.expected.txt",
         .{path_mod.withoutExtension(path)},
     );
 }
@@ -29,6 +30,19 @@ const Expectation = struct {
     }
 };
 
+fn readField(
+    in: std.fs.File.Reader,
+    gpa: std.mem.Allocator,
+    comptime field_name: []const u8,
+) ![]const u8 {
+    const line = (try in.readUntilDelimiterOrEofAlloc(gpa, '\n', std.math.maxInt(usize))).?;
+    const field = ": " ++ field_name ++ " ";
+    if (!std.mem.startsWith(u8, line, field)) {
+        std.debug.panic("illegal line '{'}'\n", .{std.zig.fmtEscapes(line)});
+    }
+    return line[field.len..];
+}
+
 fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
     const file = std.fs.cwd().openFile(path, .{}) catch |e| switch (e) {
         error.FileNotFound => {
@@ -40,8 +54,8 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
     defer file.close();
     const in = file.reader();
 
-    const returncode = try in.readByte();
-    const output_length = @intCast(usize, try in.readIntLittle(u64));
+    const returncode = try std.fmt.parseInt(u8, try readField(in, gpa, "returncode"), 10);
+    const output_length = try std.fmt.parseInt(usize, try readField(in, gpa, "stdout"), 10);
     const output = try gpa.alloc(u8, output_length);
     const nread = try in.readAll(output);
     if (nread != output_length)
@@ -49,7 +63,8 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
             "invalid format, expected {d} bytes but got {d}\n",
             .{ output_length, nread },
         );
-    const err_length = @intCast(usize, try in.readIntLittle(u64));
+    if (try in.readByte() != '\n') std.debug.panic("missing newline", .{});
+    const err_length = try std.fmt.parseInt(usize, try readField(in, gpa, "stderr"), 10);
     const err = try gpa.alloc(u8, err_length);
     const nread_err = try in.readAll(err);
     if (nread_err != err_length)
@@ -57,6 +72,7 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
             "invalid format, expected {d} bytes but got {d}\n",
             .{ err_length, nread },
         );
+    if (try in.readByte() != '\n') std.debug.panic("missing newline", .{});
     return Expectation{
         .returncode = returncode,
         .output = output,
@@ -67,16 +83,12 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
 fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     std.debug.print("[INFO] Testing {s}\n", .{path});
 
-    const bin_path = try expectedPath(gpa, path);
-    defer gpa.free(bin_path);
-    const expected = try readExpected(gpa, bin_path);
-    defer expected.deinit(gpa);
+    const expected_path = try expectedPath(gpa, path);
+    const expected = try readExpected(gpa, expected_path);
 
     var sim_out_buf = std.ArrayList(u8).init(gpa);
-    defer sim_out_buf.deinit();
     const sim_out = sim_out_buf.writer();
     var sim_err_buf = std.ArrayList(u8).init(gpa);
-    defer sim_err_buf.deinit();
     const sim_err = sim_err_buf.writer();
     const sim_cmd = [_][]const u8{ "porth", "sim", path };
     std.debug.print("[CMD]", .{});
@@ -112,10 +124,8 @@ fn runTest(gpa: std.mem.Allocator, path: []const u8, _: void) TestError!void {
     }
 
     var com_out_buf = std.ArrayList(u8).init(gpa);
-    defer com_out_buf.deinit();
     const com_out = com_out_buf.writer();
     var com_err_buf = std.ArrayList(u8).init(gpa);
-    defer com_err_buf.deinit();
     const com_err = com_err_buf.writer();
     const com_cmd = [_][]const u8{ "porth", "com", "-s", "-r", path };
     std.debug.print("[CMD]", .{});
@@ -156,21 +166,21 @@ fn writeExpected(path: []const u8, expected: Expectation) !void {
     defer file.close();
     const out = file.writer();
 
-    try out.writeByte(expected.returncode);
-    try out.writeIntLittle(u64, @intCast(u64, expected.output.len));
+    try out.print(": returncode {d}\n", .{expected.returncode});
+    try out.print(": stdout {d}\n", .{expected.output.len});
     try out.writeAll(expected.output);
-    try out.writeIntLittle(u64, @intCast(u64, expected.err.len));
+    try out.writeByte('\n');
+    try out.print(": stderr {d}\n", .{expected.err.len});
     try out.writeAll(expected.err);
+    try out.writeByte('\n');
 }
 
 const RecordMode = enum { sim, com };
 
 fn record(gpa: std.mem.Allocator, path: []const u8, mode: RecordMode) TestError!void {
     var out_buf = std.ArrayList(u8).init(gpa);
-    defer out_buf.deinit();
     const out = out_buf.writer();
     var err_buf = std.ArrayList(u8).init(gpa);
-    defer err_buf.deinit();
     const err = err_buf.writer();
     const run_cmd = switch (mode) {
         .sim => &[_][]const u8{ "porth", "sim", path },
@@ -180,10 +190,9 @@ fn record(gpa: std.mem.Allocator, path: []const u8, mode: RecordMode) TestError!
     cmd.printQuoted(run_cmd);
     std.debug.print("\n", .{});
     const code = driver.run(gpa, run_cmd, err, out) catch 1;
-    const bin_path = try expectedPath(gpa, path);
-    defer gpa.free(bin_path);
-    std.debug.print("[INFO] Saving output to {s}\n", .{bin_path});
-    try writeExpected(bin_path, .{
+    const expected_path = try expectedPath(gpa, path);
+    std.debug.print("[INFO] Saving output to {s}\n", .{expected_path});
+    try writeExpected(expected_path, .{
         .returncode = code,
         .output = out_buf.items,
         .err = err_buf.items,
@@ -201,7 +210,6 @@ fn walkTests(
         return e;
     };
     var walk = try dir.walk(gpa);
-    defer walk.deinit();
     const path = std.fs.path;
 
     var sim_failed: usize = 0;
@@ -212,7 +220,6 @@ fn walkTests(
             std.mem.eql(u8, path.extension(ent.basename), ".porth"))
         {
             const full_path = try path.join(gpa, &.{ folder, ent.path });
-            defer gpa.free(full_path);
             f(gpa, full_path, arg) catch |e| switch (e) {
                 error.SimFail => sim_failed += 1,
                 error.ComFail => com_failed += 1,
@@ -274,6 +281,9 @@ fn run() !void {
         }
     }
 
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+
     if (std.mem.eql(u8, subcmd, "record")) {
         var mode = RecordMode.sim;
         while (shift(&argp)) |arg| {
@@ -285,9 +295,9 @@ fn run() !void {
                 return error.usage;
             }
         }
-        try walkTests(gpa, folder, mode, record);
+        try walkTests(arena.allocator(), folder, mode, record);
     } else if (std.mem.eql(u8, subcmd, "test"))
-        try walkTests(gpa, folder, {}, runTest)
+        try walkTests(arena.allocator(), folder, {}, runTest)
     else if (std.mem.eql(u8, subcmd, "help"))
         try usage(std.io.getStdOut().writer(), exe_name)
     else {

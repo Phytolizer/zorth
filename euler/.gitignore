@@ -1,4 +1,4 @@
 *
 !.gitignore
 !*.porth
-!*.expected.bin
+!*.expected.txt
