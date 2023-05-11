@@ -40,6 +40,7 @@ const builtin_include_paths = &[_][]const u8{
 pub fn run(
     gpa: std.mem.Allocator,
     args: []const []const u8,
+    stdin: anytype,
     stderr: anytype,
     stdout: anytype,
 ) Error!u8 {
@@ -98,7 +99,14 @@ pub fn run(
         porth_args[0] = program_name;
         std.mem.copy([]const u8, porth_args[1..], argp);
         defer gpa.free(porth_args);
-        try sim.simulateProgram(gpa, program.items, porth_args, stderr, stdout);
+        try sim.simulateProgram(
+            gpa,
+            program.items,
+            porth_args,
+            stdin,
+            stderr,
+            stdout,
+        );
     } else if (std.mem.eql(u8, subcommand, "com")) {
         var run_flag = false;
         var silent_flag = false;
@@ -167,7 +175,12 @@ pub fn run(
             defer gpa.free(relpath);
             const run_args = try std.mem.concat(gpa, []const u8, &.{ &.{relpath}, argp });
             defer gpa.free(run_args);
-            return try cmd.captureCmd(gpa, run_args, stdout, .{ .silent = silent_flag });
+            return try cmd.captureCmd(
+                gpa,
+                run_args,
+                stdout,
+                .{ .stdin = stdin, .silent = silent_flag },
+            );
         }
     } else if (std.mem.eql(u8, subcommand, "help")) {
         usage(stdout, program_name);

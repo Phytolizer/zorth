@@ -1,6 +1,8 @@
-: returncode 1
-: stdout 0
+:i returncode 1
+:b stdin 0
 
-: stderr 76
+:b stdout 0
+
+:b stderr 76
 tests/error-end-too-soon.porth:1:7: ERROR: `end` can only close `if`-blocks
 

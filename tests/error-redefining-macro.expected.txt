@@ -1,6 +1,8 @@
-: returncode 1
-: stdout 0
+:i returncode 1
+:b stdin 0
 
-: stderr 85
+:b stdout 0
+
+:b stderr 85
 tests/error-redefining-macro.porth:2:7: ERROR: redefinition of existing macro 'test'
 

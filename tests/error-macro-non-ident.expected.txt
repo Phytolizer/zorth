@@ -1,6 +1,8 @@
-: returncode 1
-: stdout 0
+:i returncode 1
+:b stdin 0
 
-: stderr 100
+:b stdout 0
+
+:b stderr 100
 tests/error-macro-non-ident.porth:1:7: ERROR: expected macro name to be a word but found an integer
 

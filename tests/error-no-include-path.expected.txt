@@ -1,6 +1,8 @@
-: returncode 1
-: stdout 0
+:i returncode 1
+:b stdin 0
 
-: stderr 91
+:b stdout 0
+
+:b stderr 91
 tests/error-no-include-path.porth:1:1: ERROR: expected include path but found end of input
 

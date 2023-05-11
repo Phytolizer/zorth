@@ -54,17 +54,14 @@ pub fn printQuoted(cmd: []const []const u8) void {
 
 pub const CaptureError = std.ChildProcess.ExecError ||
     std.fs.File.WriteError ||
+    error{StreamTooLong} ||
     error{Crash};
 pub const CallError = CaptureError || error{ExitStatus};
-
-pub const CallArgs = struct {
-    silent: bool = false,
-};
 
 pub fn callCmd(
     gpa: std.mem.Allocator,
     cmd: []const []const u8,
-    args: CallArgs,
+    args: anytype,
 ) CallError!void {
     const code = try captureCmd(gpa, cmd, std.io.getStdOut(), args);
     if (code != 0) return error.ExitStatus;
@@ -74,7 +71,7 @@ pub fn captureCmd(
     gpa: std.mem.Allocator,
     cmd: []const []const u8,
     stdout: anytype,
-    args: CallArgs,
+    args: anytype,
 ) CaptureError!u8 {
     if (!args.silent) {
         std.debug.print("[CMD]", .{});
@@ -85,11 +82,19 @@ pub fn captureCmd(
     var proc = std.ChildProcess.init(cmd, gpa);
     proc.stdout_behavior = .Pipe;
     proc.stderr_behavior = .Pipe;
+    if (@hasField(@TypeOf(args), "stdin"))
+        proc.stdin_behavior = .Pipe;
+
     try proc.spawn();
     var out = std.ArrayList(u8).init(gpa);
     defer out.deinit();
     var err = std.ArrayList(u8).init(gpa);
     defer err.deinit();
+    if (@hasField(@TypeOf(args), "stdin")) {
+        const in = try args.stdin.readAllAlloc(gpa, std.math.maxInt(usize));
+        defer gpa.free(in);
+        try proc.stdin.?.writeAll(in);
+    }
     try proc.collectOutput(&out, &err, std.math.maxInt(usize));
     const term = try proc.wait();
     std.debug.print("{s}", .{err.items});

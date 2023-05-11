@@ -1,5 +1,7 @@
-: returncode 0
-: stdout 142
+:i returncode 0
+:b stdin 0
+
+:b stdout 142
 69
 ------------------------------
 420
@@ -11,5 +13,5 @@
 5
 4
 
-: stderr 0
+:b stderr 0
 

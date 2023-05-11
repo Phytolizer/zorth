@@ -1,6 +1,8 @@
-: returncode 1
-: stdout 0
+:i returncode 1
+:b stdin 0
 
-: stderr 79
+:b stdout 0
+
+:b stderr 79
 ./error-include-self.porth:1:1: ERROR: include exceeded expansion limit (1000)
 

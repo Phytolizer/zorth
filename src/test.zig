@@ -21,26 +21,61 @@ fn expectedPath(gpa: std.mem.Allocator, path: []const u8) ![]const u8 {
 
 const Expectation = struct {
     returncode: u8,
+    in: []const u8,
     output: []const u8,
     err: []const u8,
 
     pub fn deinit(self: @This(), gpa: std.mem.Allocator) void {
+        gpa.free(self.in);
         gpa.free(self.output);
         gpa.free(self.err);
+    }
+};
+
+const FieldKind = enum {
+    int,
+    blob,
+    pub fn text(comptime self: @This()) []const u8 {
+        return switch (self) {
+            .int => "i",
+            .blob => "b",
+        };
+    }
+    pub fn Type(comptime self: @This()) type {
+        return switch (self) {
+            .int => usize,
+            .blob => []const u8,
+        };
     }
 };
 
 fn readField(
     in: std.fs.File.Reader,
     gpa: std.mem.Allocator,
+    comptime kind: FieldKind,
     comptime field_name: []const u8,
-) ![]const u8 {
+) !kind.Type() {
     const line = (try in.readUntilDelimiterOrEofAlloc(gpa, '\n', std.math.maxInt(usize))).?;
-    const field = ": " ++ field_name ++ " ";
+    const field = ":" ++ comptime kind.text() ++ " " ++ field_name ++ " ";
     if (!std.mem.startsWith(u8, line, field)) {
         std.debug.panic("illegal line '{'}'\n", .{std.zig.fmtEscapes(line)});
     }
-    return line[field.len..];
+    const text = line[field.len..];
+    switch (kind) {
+        .int => return try std.fmt.parseInt(kind.Type(), text, 10),
+        .blob => {
+            const length = try std.fmt.parseInt(usize, text, 10);
+            const result = try gpa.alloc(u8, length);
+            const nread = try in.readAll(result);
+            if (nread != length)
+                std.debug.panic(
+                    "invalid format, expected {d} bytes but got {d}\n",
+                    .{ length, nread },
+                );
+            if (try in.readByte() != '\n') std.debug.panic("missing newline", .{});
+            return result;
+        },
+    }
 }
 
 fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
@@ -54,27 +89,13 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
     defer file.close();
     const in = file.reader();
 
-    const returncode = try std.fmt.parseInt(u8, try readField(in, gpa, "returncode"), 10);
-    const output_length = try std.fmt.parseInt(usize, try readField(in, gpa, "stdout"), 10);
-    const output = try gpa.alloc(u8, output_length);
-    const nread = try in.readAll(output);
-    if (nread != output_length)
-        std.debug.panic(
-            "invalid format, expected {d} bytes but got {d}\n",
-            .{ output_length, nread },
-        );
-    if (try in.readByte() != '\n') std.debug.panic("missing newline", .{});
-    const err_length = try std.fmt.parseInt(usize, try readField(in, gpa, "stderr"), 10);
-    const err = try gpa.alloc(u8, err_length);
-    const nread_err = try in.readAll(err);
-    if (nread_err != err_length)
-        std.debug.panic(
-            "invalid format, expected {d} bytes but got {d}\n",
-            .{ err_length, nread },
-        );
-    if (try in.readByte() != '\n') std.debug.panic("missing newline", .{});
+    const returncode = @intCast(u8, try readField(in, gpa, .int, "returncode"));
+    const stdin = try readField(in, gpa, .blob, "stdin");
+    const output = try readField(in, gpa, .blob, "stdout");
+    const err = try readField(in, gpa, .blob, "stderr");
     return Expectation{
         .returncode = returncode,
+        .in = stdin,
         .output = output,
         .err = err,
     };
@@ -102,7 +123,14 @@ fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&sim_cmd);
     std.debug.print("\n", .{});
-    const sim_code = driver.run(gpa, &sim_cmd, sim_err, sim_out) catch 1;
+    var sim_in = std.io.fixedBufferStream(expected.in);
+    const sim_code = driver.run(
+        gpa,
+        &sim_cmd,
+        sim_in.reader(),
+        sim_err,
+        sim_out,
+    ) catch 1;
 
     var sim_fail = false;
     if (!(std.mem.eql(u8, sim_out_buf.items, expected.output) and
@@ -139,7 +167,8 @@ fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(&com_cmd);
     std.debug.print("\n", .{});
-    const com_code = driver.run(gpa, &com_cmd, com_err, com_out) catch 1;
+    var com_in = std.io.fixedBufferStream(expected.in);
+    const com_code = driver.run(gpa, &com_cmd, com_in.reader(), com_err, com_out) catch 1;
 
     if (!(std.mem.eql(u8, com_out_buf.items, expected.output) and
         std.mem.eql(u8, com_err_buf.items, expected.err) and
@@ -169,18 +198,27 @@ fn runTest(gpa: std.mem.Allocator, folder: []const u8, path: []const u8, _: void
     if (sim_fail) return error.SimFail;
 }
 
+fn writeField(
+    out: anytype,
+    comptime kind: FieldKind,
+    comptime field_name: []const u8,
+    value: kind.Type(),
+) !void {
+    switch (kind) {
+        .int => try out.print(":i {s} {d}\n", .{ field_name, value }),
+        .blob => try out.print(":b {s} {d}\n{s}\n", .{ field_name, value.len, value }),
+    }
+}
+
 fn writeExpected(path: []const u8, expected: Expectation) !void {
     const file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
     const out = file.writer();
 
-    try out.print(": returncode {d}\n", .{expected.returncode});
-    try out.print(": stdout {d}\n", .{expected.output.len});
-    try out.writeAll(expected.output);
-    try out.writeByte('\n');
-    try out.print(": stderr {d}\n", .{expected.err.len});
-    try out.writeAll(expected.err);
-    try out.writeByte('\n');
+    try writeField(out, .int, "returncode", expected.returncode);
+    try writeField(out, .blob, "stdin", expected.in);
+    try writeField(out, .blob, "stdout", expected.output);
+    try writeField(out, .blob, "stderr", expected.err);
 }
 
 const RecordMode = enum { sim, com };
@@ -196,17 +234,26 @@ fn record(
     var err_buf = std.ArrayList(u8).init(gpa);
     const err = err_buf.writer();
     const run_cmd = switch (mode) {
-        .sim => &simCmd(folder, path),
+        .sim => &simCmd(folder, try gpa.dupe(u8, path)),
         .com => &comCmd(folder, path),
     };
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(run_cmd);
     std.debug.print("\n", .{});
-    const code = driver.run(gpa, run_cmd, err, out) catch 1;
+    // TODO: allow putting stdin here
+    var stdin = std.io.fixedBufferStream(&[_]u8{});
+    const code = driver.run(
+        gpa,
+        run_cmd,
+        stdin.reader(),
+        err,
+        out,
+    ) catch 1;
     const expected_path = try expectedPath(gpa, path);
     std.debug.print("[INFO] Saving output to {s}\n", .{expected_path});
     try writeExpected(expected_path, .{
         .returncode = code,
+        .in = &.{},
         .output = out_buf.items,
         .err = err_buf.items,
     });

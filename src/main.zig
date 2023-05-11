@@ -9,10 +9,11 @@ fn run() !u8 {
     const args = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, args);
 
+    const stdin = std.io.getStdIn().reader();
     const stderr = std.io.getStdErr().writer();
     const stdout = std.io.getStdOut().writer();
 
-    return try driver.run(gpa, args, stderr, stdout);
+    return try driver.run(gpa, args, stdin, stderr, stdout);
 }
 
 pub fn main() !void {

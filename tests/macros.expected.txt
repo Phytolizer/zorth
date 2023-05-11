@@ -1,5 +1,7 @@
-: returncode 0
-: stdout 86
+:i returncode 0
+:b stdin 0
+
+:b stdout 86
 YES
 NO
 ------------------------------
@@ -15,5 +17,5 @@ NO
 196418
 832040
 
-: stderr 0
+:b stderr 0
 

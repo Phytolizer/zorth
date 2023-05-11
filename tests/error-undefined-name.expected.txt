@@ -1,6 +1,8 @@
-: returncode 1
-: stdout 0
+:i returncode 1
+:b stdin 0
 
-: stderr 67
+:b stdout 0
+
+:b stderr 67
 tests/error-undefined-name.porth:1:1: ERROR: unknown word 'abcdef'
 

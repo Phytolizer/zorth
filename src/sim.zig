@@ -15,19 +15,30 @@ pub fn simulateProgram(
     gpa: std.mem.Allocator,
     program: []const Op,
     args: []const []const u8,
+    stdin: anytype,
     stderr: anytype,
-    raw_stdout: anytype,
+    stdout: anytype,
 ) !void {
     var stack = std.ArrayList(u64).init(gpa);
     defer stack.deinit();
-    var stdout_buf = std.io.bufferedWriter(raw_stdout);
-    defer stdout_buf.flush() catch {};
-    const stdout = stdout_buf.writer();
     const opts = @import("opts");
     const nul_padding = 1; // ASCII NUL terminator
     var mem = try gpa.alloc(u8, opts.mem_capacity + opts.str_capacity + nul_padding);
     defer gpa.free(mem);
     @memset(mem, 0);
+
+    const builtin_fds = .{
+        stdin,
+        stdout,
+        stderr,
+    };
+
+    var fds = std.AutoArrayHashMap(usize, std.fs.File).init(gpa);
+    defer {
+        for (fds.values()) |f|
+            f.close();
+        fds.deinit();
+    }
 
     var str_offsets = std.AutoArrayHashMap(usize, usize).init(gpa);
     defer str_offsets.deinit();
@@ -152,7 +163,7 @@ pub fn simulateProgram(
                 },
                 .print => {
                     const x = stack.pop();
-                    try stdout.print("{d}\n", .{x});
+                    try builtin_fds.@"1".print("{d}\n", .{x});
                     ip += 1;
                 },
                 .mem => {
@@ -194,6 +205,7 @@ pub fn simulateProgram(
                     const syscall_number = stack.pop();
                     switch (syscall_number) {
                         39 => {
+                            // getpid
                             try stack.append(@intCast(u64, std.os.linux.getpid()));
                         },
                         else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
@@ -204,7 +216,10 @@ pub fn simulateProgram(
                     const syscall_number = stack.pop();
                     const arg1 = stack.pop();
                     switch (syscall_number) {
-                        60 => std.process.exit(@truncate(u8, arg1)),
+                        60 => {
+                            // exit
+                            std.process.exit(@truncate(u8, arg1));
+                        },
                         else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
                     }
                     ip += 1;
@@ -215,15 +230,36 @@ pub fn simulateProgram(
                     const arg2 = stack.pop();
                     const arg3 = stack.pop();
                     switch (syscall_number) {
+                        0 => {
+                            // read
+                            const fd = @intCast(usize, arg1);
+                            const buf = @intCast(usize, arg2);
+                            const count = @intCast(usize, arg3);
+                            const s = mem[buf .. buf + count];
+                            const nread = switch (fd) {
+                                0 => try builtin_fds.@"0".readAll(s),
+                                else => blk: {
+                                    const f = fds.get(fd) orelse
+                                        std.debug.panic("unknown file descriptor {d}", .{fd});
+                                    break :blk try f.reader().readAll(s);
+                                },
+                            };
+                            try stack.append(@intCast(u64, nread));
+                        },
                         1 => {
-                            const fd = arg1;
+                            // write
+                            const fd = @intCast(usize, arg1);
                             const buf = @intCast(usize, arg2);
                             const count = @intCast(usize, arg3);
                             const s = mem[buf .. buf + count];
                             switch (fd) {
-                                1 => try stdout.writeAll(s),
-                                2 => try stderr.writeAll(s),
-                                else => std.debug.panic("unknown file descriptor {d}", .{fd}),
+                                1 => try builtin_fds.@"1".writeAll(s),
+                                2 => try builtin_fds.@"2".writeAll(s),
+                                else => {
+                                    const f = fds.get(fd) orelse
+                                        std.debug.panic("unknown file descriptor {d}", .{fd});
+                                    try f.writer().writeAll(s);
+                                },
                             }
                             try stack.append(arg3);
                         },
