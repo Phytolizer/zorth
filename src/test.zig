@@ -260,7 +260,6 @@ fn writeExpected(gpa: std.mem.Allocator, path: []const u8, expected: Expectation
 const RecordOpts = struct {
     mode: Mode,
     args: []const []const u8 = &.{},
-    in: []const u8 = "",
 
     pub const Mode = enum { sim, com };
 };
@@ -274,7 +273,11 @@ fn recordInput(
     const expected_path = try expectedPath(gpa, path);
     var expected = try readExpected(gpa, expected_path);
     expected.args = opts.args;
-    expected.in = opts.in;
+    std.debug.print(
+        "[INFO] Provide the stdin for the test case. Press ^D when done.\n",
+        .{},
+    );
+    expected.in = try std.io.getStdIn().readToEndAlloc(gpa, std.math.maxInt(usize));
     std.debug.print("[INFO] Saving input to {s}\n", .{path});
     try writeExpected(gpa, expected_path, expected);
 }
