@@ -62,6 +62,11 @@ pub fn simulateProgram(
     var ip: usize = 0;
     while (ip < program.len) {
         const op = &program[ip];
+        // std.debug.print("stack:\n", .{});
+        // for (stack.items) |s| {
+        //     std.debug.print("  {d}\n", .{s});
+        // }
+        // std.debug.print("{any}\n", .{op});
         switch (op.code) {
             .push_int => |x| {
                 try stack.append(x);
@@ -236,15 +241,15 @@ pub fn simulateProgram(
                             const buf = @intCast(usize, arg2);
                             const count = @intCast(usize, arg3);
                             const s = mem[buf .. buf + count];
-                            const nread = switch (fd) {
-                                0 => try builtin_fds.@"0".readAll(s),
+                            const read = switch (fd) {
+                                0 => builtin_fds.@"0".readUntilDelimiterOrEof(s, '\n') catch "",
                                 else => blk: {
                                     const f = fds.get(fd) orelse
                                         std.debug.panic("unknown file descriptor {d}", .{fd});
-                                    break :blk try f.reader().readAll(s);
+                                    break :blk f.reader().readUntilDelimiterOrEof(s, '\n') catch "";
                                 },
                             };
-                            try stack.append(@intCast(u64, nread));
+                            try stack.append(@intCast(u64, (read orelse "").len));
                         },
                         1 => {
                             // write
