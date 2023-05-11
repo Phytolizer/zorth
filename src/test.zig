@@ -134,14 +134,20 @@ fn runTest(
     const sim_out = sim_out_buf.writer();
     var sim_err_buf = std.ArrayList(u8).init(gpa);
     const sim_err = sim_err_buf.writer();
-    const sim_cmd = simCmd(folder, try gpa.dupe(u8, path));
+    const sim_cmd = blk: {
+        const base_cmd = simCmd(folder, try gpa.dupe(u8, path));
+        break :blk try std.mem.concat(gpa, []const u8, &[_][]const []const u8{
+            &base_cmd,
+            expected.args,
+        });
+    };
     std.debug.print("[CMD]", .{});
-    cmd.printQuoted(&sim_cmd);
+    cmd.printQuoted(sim_cmd);
     std.debug.print("\n", .{});
     var sim_in = std.io.fixedBufferStream(expected.in);
     const sim_code = driver.run(
         gpa,
-        &sim_cmd,
+        sim_cmd,
         sim_in.reader(),
         sim_err,
         sim_out,
@@ -178,12 +184,18 @@ fn runTest(
     const com_out = com_out_buf.writer();
     var com_err_buf = std.ArrayList(u8).init(gpa);
     const com_err = com_err_buf.writer();
-    const com_cmd = comCmd(folder, path);
+    const com_cmd = blk: {
+        const base_cmd = comCmd(folder, path);
+        break :blk try std.mem.concat(gpa, []const u8, &[_][]const []const u8{
+            &base_cmd,
+            expected.args,
+        });
+    };
     std.debug.print("[CMD]", .{});
-    cmd.printQuoted(&com_cmd);
+    cmd.printQuoted(com_cmd);
     std.debug.print("\n", .{});
     var com_in = std.io.fixedBufferStream(expected.in);
-    const com_code = driver.run(gpa, &com_cmd, com_in.reader(), com_err, com_out) catch 1;
+    const com_code = driver.run(gpa, com_cmd, com_in.reader(), com_err, com_out) catch 1;
 
     if (!(std.mem.eql(u8, com_out_buf.items, expected.output) and
         std.mem.eql(u8, com_err_buf.items, expected.err) and
@@ -253,38 +265,45 @@ const RecordOpts = struct {
     pub const Mode = enum { sim, com };
 };
 
-fn record(
+fn recordInput(
     gpa: std.mem.Allocator,
-    folder: []const u8,
+    _: []const u8,
     path: []const u8,
     opts: RecordOpts,
 ) TestError!void {
+    const expected_path = try expectedPath(gpa, path);
+    var expected = try readExpected(gpa, expected_path);
+    expected.args = opts.args;
+    expected.in = opts.in;
+    std.debug.print("[INFO] Saving input to {s}\n", .{path});
+    try writeExpected(gpa, expected_path, expected);
+}
+
+fn recordOutput(
+    gpa: std.mem.Allocator,
+    folder: []const u8,
+    path: []const u8,
+    mode: RecordOpts.Mode,
+) TestError!void {
+    const expected_path = try expectedPath(gpa, path);
+    const expected = try readExpected(gpa, expected_path);
+
     var out_buf = std.ArrayList(u8).init(gpa);
     const out = out_buf.writer();
     var err_buf = std.ArrayList(u8).init(gpa);
     const err = err_buf.writer();
-    const run_cmd = switch (opts.mode) {
-        .sim => blk: {
-            const base = simCmd(folder, try gpa.dupe(u8, path));
-            break :blk try std.mem.concat(
-                gpa,
-                []const u8,
-                &[_][]const []const u8{ &base, opts.args },
-            );
-        },
-        .com => blk: {
-            const base = comCmd(folder, try gpa.dupe(u8, path));
-            break :blk try std.mem.concat(
-                gpa,
-                []const u8,
-                &[_][]const []const u8{ &base, opts.args },
-            );
-        },
+    const base_cmd = switch (mode) {
+        .sim => &simCmd(folder, try gpa.dupe(u8, path)),
+        .com => &comCmd(folder, try gpa.dupe(u8, path)),
     };
+    const run_cmd = try std.mem.concat(gpa, []const u8, &[_][]const []const u8{
+        base_cmd,
+        expected.args,
+    });
     std.debug.print("[CMD]", .{});
     cmd.printQuoted(run_cmd);
     std.debug.print("\n", .{});
-    var stdin = std.io.fixedBufferStream(opts.in);
+    var stdin = std.io.fixedBufferStream(expected.in);
     const code = driver.run(
         gpa,
         run_cmd,
@@ -292,10 +311,9 @@ fn record(
         err,
         out,
     ) catch 1;
-    const expected_path = try expectedPath(gpa, path);
     std.debug.print("[INFO] Saving output to {s}\n", .{expected_path});
     try writeExpected(gpa, expected_path, .{
-        .args = opts.args,
+        .args = expected.args,
         .returncode = code,
         .in = &.{},
         .output = out_buf.items,
@@ -346,11 +364,14 @@ fn usage(writer: anytype, exe_name: []const u8) !void {
     try writer.print(
         \\Usage: {s} [OPTIONS] [SUBCOMMAND]
         \\OPTIONS:
-        \\  -f <folder>     Set the folder with tests. (Default ./tests)
+        \\  -f <folder>                 Set the folder with tests. (Default ./tests)
         \\SUBCOMMANDS:
-        \\  test            Run tests. (Default)
-        \\  record [-com]   Update the expected output. (Use compiled mode if `-com`.)
-        \\  help            Show this help.
+        \\  test                        Run tests. (Default)
+        \\  record <SUBSUBCOMMAND>      Update the expected in/output.
+        \\    SUBSUBCOMMANDS:
+        \\      output                  Update output.
+        \\      input <file>            Update input for <file>.
+        \\  help                        Show this help.
         \\
     , .{exe_name});
 }
@@ -389,17 +410,35 @@ fn run() !void {
     defer arena.deinit();
 
     if (std.mem.eql(u8, subcmd, "record")) {
+        var recording_arg: ?[]const u8 = null;
         var mode = RecordOpts.Mode.sim;
         while (shift(&argp)) |arg| {
             if (std.mem.eql(u8, arg, "-com")) {
                 mode = .com;
             } else {
-                usage(stderr, exe_name) catch unreachable;
-                std.debug.print("[ERROR] unknown flag '{s}'\n", .{arg});
-                return error.usage;
+                recording_arg = arg;
+                break;
             }
         }
-        try walkTests(arena.allocator(), folder, RecordOpts{ .mode = mode }, record);
+        const recording = recording_arg orelse {
+            usage(stderr, exe_name) catch unreachable;
+            std.debug.print("[ERROR] no argument for 'record'\n", .{});
+            return error.Usage;
+        };
+        if (std.mem.eql(u8, recording, "output"))
+            try walkTests(arena.allocator(), folder, mode, recordOutput)
+        else if (std.mem.eql(u8, recording, "input")) {
+            const test_file = shift(&argp) orelse {
+                usage(stderr, exe_name) catch unreachable;
+                std.debug.print("[ERROR] no argument for 'record input'\n", .{});
+                return error.Usage;
+            };
+            try recordInput(arena.allocator(), "", test_file, .{ .mode = mode, .args = argp });
+        } else {
+            usage(stderr, exe_name) catch unreachable;
+            std.debug.print("[ERROR] cannot record '{s}'\n", .{recording});
+            return error.Usage;
+        }
     } else if (std.mem.eql(u8, subcmd, "test"))
         try walkTests(arena.allocator(), folder, {}, runTest)
     else if (std.mem.eql(u8, subcmd, "help"))
