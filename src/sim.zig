@@ -185,7 +185,6 @@ pub fn simulateProgram(
                     std.mem.writeIntLittle(u64, bytes[0..8], value);
                     ip += 1;
                 },
-                .syscall1,
                 .syscall2,
                 .syscall4,
                 .syscall5,
@@ -197,6 +196,15 @@ pub fn simulateProgram(
                         39 => {
                             try stack.append(@intCast(u64, std.os.linux.getpid()));
                         },
+                        else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
+                    }
+                    ip += 1;
+                },
+                .syscall1 => {
+                    const syscall_number = stack.pop();
+                    const arg1 = stack.pop();
+                    switch (syscall_number) {
+                        60 => std.process.exit(@truncate(u8, arg1)),
                         else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
                     }
                     ip += 1;
