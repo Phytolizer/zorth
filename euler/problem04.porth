@@ -1,3 +1,5 @@
+// WARNING: This program is slow when simulated with -Doptimize=Debug.
+// It is much faster when the zorth binary is optimized.
 include "std.porth"
 
 macro ans mem end
