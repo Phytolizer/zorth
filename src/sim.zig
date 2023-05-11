@@ -3,12 +3,12 @@ const Op = @import("Op.zig");
 const math = @import("math.zig");
 
 fn binaryOp(
-    stack: *std.ArrayList(i64),
-    comptime op: fn (comptime T: type, x: i64, y: i64) i64,
+    stack: *std.ArrayList(u64),
+    comptime op: fn (comptime T: type, x: u64, y: u64) u64,
 ) void {
     const b = stack.pop();
     const a = stack.pop();
-    stack.appendAssumeCapacity(op(i64, a, b));
+    stack.appendAssumeCapacity(op(u64, a, b));
 }
 
 pub fn simulateProgram(
@@ -17,7 +17,7 @@ pub fn simulateProgram(
     stderr: anytype,
     raw_stdout: anytype,
 ) !void {
-    var stack = std.ArrayList(i64).init(gpa);
+    var stack = std.ArrayList(u64).init(gpa);
     defer stack.deinit();
     var stdout_buf = std.io.bufferedWriter(raw_stdout);
     defer stdout_buf.flush() catch {};
@@ -41,7 +41,7 @@ pub fn simulateProgram(
             },
             .push_str => |x| {
                 const s = x;
-                try stack.append(@intCast(i64, s.len));
+                try stack.append(@intCast(u64, s.len));
                 const addr = str_offsets.get(ip) orelse blk: {
                     const addr = str_size;
                     try str_offsets.put(ip, str_size);
@@ -52,7 +52,7 @@ pub fn simulateProgram(
                         std.debug.panic("string buffer overflow by {d} bytes", .{str_size - opts.str_capacity});
                     break :blk addr;
                 };
-                try stack.append(@intCast(i64, addr));
+                try stack.append(@intCast(u64, addr));
                 ip += 1;
             },
             .@"if", .do => |maybe_targ| {
@@ -151,6 +151,20 @@ pub fn simulateProgram(
                     mem[@intCast(usize, addr)] = @truncate(u8, @intCast(usize, value));
                     ip += 1;
                 },
+                .load64 => {
+                    const addr = stack.pop();
+                    const bytes = mem[@intCast(usize, addr)..];
+                    const value = std.mem.readIntSliceLittle(u64, bytes);
+                    try stack.append(value);
+                    ip += 1;
+                },
+                .store64 => {
+                    const value = stack.pop();
+                    const addr = stack.pop();
+                    const bytes = mem[@intCast(usize, addr)..];
+                    std.mem.writeIntLittle(u64, bytes[0..8], value);
+                    ip += 1;
+                },
                 .syscall1,
                 .syscall2,
                 .syscall4,
@@ -161,7 +175,7 @@ pub fn simulateProgram(
                     const syscall_number = stack.pop();
                     switch (syscall_number) {
                         39 => {
-                            try stack.append(std.os.linux.getpid());
+                            try stack.append(@intCast(u64, std.os.linux.getpid()));
                         },
                         else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
                     }

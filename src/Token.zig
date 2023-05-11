@@ -7,7 +7,7 @@ value: Value,
 
 pub const Value = union(enum) {
     word: []const u8,
-    int: u63,
+    int: u64,
     str: []const u8,
     // for UTF8 support
     character: u21,

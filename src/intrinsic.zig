@@ -28,6 +28,8 @@ pub const Intrinsic = enum {
     mem,
     load,
     store,
+    load64,
+    store64,
 
     // System calls.
     syscall0,
@@ -57,6 +59,8 @@ pub const Intrinsic = enum {
         .{ "mem", .mem },
         .{ ",", .load },
         .{ ".", .store },
+        .{ ",64", .load64 },
+        .{ ".64", .store64 },
         .{ "syscall0", .syscall0 },
         .{ "syscall1", .syscall1 },
         .{ "syscall2", .syscall2 },

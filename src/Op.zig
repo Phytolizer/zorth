@@ -20,7 +20,7 @@ pub const Location = struct {
 };
 
 pub const Code = union(enum) {
-    push_int: u63,
+    push_int: u64,
     push_str: []const u8,
 
     intrinsic: Intrinsic,

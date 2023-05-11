@@ -12,7 +12,7 @@ fn streq(a: []const u8, b: []const u8) bool {
 }
 
 fn lexWord(gpa: std.mem.Allocator, word: []const u8) !Token.Value {
-    return if (std.fmt.parseInt(u63, word, 10)) |int|
+    return if (std.fmt.parseInt(u64, word, 10)) |int|
         .{ .int = int }
     else |_| if (Keyword.names.get(word)) |kw|
         .{ .keyword = kw }

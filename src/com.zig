@@ -185,6 +185,16 @@ pub fn compileProgram(
                     try emit(&out, "pop rax");
                     try emit(&out, "mov [rax], bl");
                 },
+                .load64 => {
+                    try emit(&out, "pop rax");
+                    try emit(&out, "mov rbx, [rax]");
+                    try emit(&out, "push rbx");
+                },
+                .store64 => {
+                    try emit(&out, "pop rbx");
+                    try emit(&out, "pop rax");
+                    try emit(&out, "mov [rax], rbx");
+                },
                 .syscall0 => {
                     try emit(&out, "pop rax");
                     try emit(&out, "syscall");
