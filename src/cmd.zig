@@ -1,5 +1,4 @@
 const std = @import("std");
-const mem_ext = @import("mem_ext.zig");
 
 inline fn isSafeUnixChar(c: u8) bool {
     return switch (c) {
@@ -36,7 +35,7 @@ pub fn printQuoted(cmd: []const []const u8) void {
         out.writeByte(' ') catch unreachable;
         if (arg.len == 0) {
             out.writeAll("''") catch unreachable;
-        } else if (mem_ext.indexOfNone(u8, arg, safe_unix_chars) == null) {
+        } else if (std.mem.indexOfNone(u8, arg, safe_unix_chars) == null) {
             out.print("{s}", .{arg}) catch unreachable;
         } else {
             out.writeByte('\'') catch unreachable;
