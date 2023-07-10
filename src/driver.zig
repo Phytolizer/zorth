@@ -144,7 +144,7 @@ pub fn run(
         var basename_alloc = false;
         const basename = if (out_path_arg) |op| blk: {
             const is_dir = if (std.fs.cwd().statFile(op)) |st|
-                st.kind == .Directory
+                st.kind == .directory
             else |_|
                 false;
             if (is_dir) {

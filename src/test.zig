@@ -88,7 +88,7 @@ fn readExpected(gpa: std.mem.Allocator, path: []const u8) !Expectation {
     defer file.close();
     const in = file.reader();
 
-    const returncode = @intCast(u8, try readField(in, gpa, .int, "returncode"));
+    const returncode: u8 = @intCast(try readField(in, gpa, .int, "returncode"));
     const argc = try readField(in, gpa, .int, "argc");
     var args = try std.ArrayList([]const u8).initCapacity(gpa, argc);
     for (0..argc) |i| {
@@ -341,7 +341,7 @@ fn walkTests(
     var com_failed: usize = 0;
 
     while (try walk.next()) |ent|
-        if (ent.kind == .File and
+        if (ent.kind == .file and
             std.mem.eql(u8, path.extension(ent.basename), ".porth"))
         {
             const full_path = try path.join(gpa, &.{ folder, ent.path });

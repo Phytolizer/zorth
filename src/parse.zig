@@ -97,7 +97,7 @@ fn lexLines(
         var line = getLine(text, line_starts.items, row);
         var it = std.mem.tokenize(u8, line, &std.ascii.whitespace);
         while (it.next()) |word| {
-            var col = @ptrToInt(word.ptr) - @ptrToInt(line.ptr);
+            var col = @intFromPtr(word.ptr) - @intFromPtr(line.ptr);
             const loc = Op.Location{
                 .file_path = file_path,
                 .row = row + 1,
@@ -476,7 +476,7 @@ fn compile(
                             const full_path = try std.fs.path.join(arena, &.{ include_path, path });
                             if (std.fs.cwd().openFile(full_path, .{})) |f| {
                                 const stat = try f.stat();
-                                if (stat.kind != .File) continue;
+                                if (stat.kind != .file) continue;
                                 break :doInclude f;
                             } else |_| continue;
                         }

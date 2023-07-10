@@ -57,7 +57,7 @@ pub fn simulateProgram(
                 .{str_size - opts.str_capacity - nul_padding},
             );
     }
-    try stack.append(@intCast(u64, args.len));
+    try stack.append(@as(u64, @intCast(args.len)));
 
     var ip: usize = 0;
     while (ip < program.len) {
@@ -74,7 +74,7 @@ pub fn simulateProgram(
             },
             .push_str => |x| {
                 const s = x;
-                try stack.append(@intCast(u64, s.len));
+                try stack.append(@as(u64, @intCast(s.len)));
                 const addr = str_offsets.get(ip) orelse blk: {
                     const addr = str_size;
                     try str_offsets.put(ip, str_size);
@@ -88,7 +88,7 @@ pub fn simulateProgram(
                         );
                     break :blk addr;
                 };
-                try stack.append(@intCast(u64, addr));
+                try stack.append(@as(u64, @intCast(addr)));
                 ip += 1;
             },
             .@"if", .do => |maybe_targ| {
@@ -177,19 +177,19 @@ pub fn simulateProgram(
                 },
                 .load => {
                     const addr = stack.pop();
-                    const byte = mem[@intCast(usize, addr)];
+                    const byte = mem[@as(usize, @intCast(addr))];
                     try stack.append(byte);
                     ip += 1;
                 },
                 .store => {
                     const value = stack.pop();
                     const addr = stack.pop();
-                    mem[@intCast(usize, addr)] = @truncate(u8, @intCast(usize, value));
+                    mem[@as(usize, @intCast(addr))] = @as(u8, @truncate(@as(usize, @intCast(value))));
                     ip += 1;
                 },
                 .load64 => {
                     const addr = stack.pop();
-                    const bytes = mem[@intCast(usize, addr)..];
+                    const bytes = mem[@as(usize, @intCast(addr))..];
                     const value = std.mem.readIntSliceLittle(u64, bytes);
                     try stack.append(value);
                     ip += 1;
@@ -197,7 +197,7 @@ pub fn simulateProgram(
                 .store64 => {
                     const value = stack.pop();
                     const addr = stack.pop();
-                    const bytes = mem[@intCast(usize, addr)..];
+                    const bytes = mem[@as(usize, @intCast(addr))..];
                     std.mem.writeIntLittle(u64, bytes[0..8], value);
                     ip += 1;
                 },
@@ -211,7 +211,7 @@ pub fn simulateProgram(
                     switch (syscall_number) {
                         39 => {
                             // getpid
-                            try stack.append(@intCast(u64, std.os.linux.getpid()));
+                            try stack.append(@as(u64, @intCast(std.os.linux.getpid())));
                         },
                         else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
                     }
@@ -223,7 +223,7 @@ pub fn simulateProgram(
                     switch (syscall_number) {
                         60 => {
                             // exit
-                            std.process.exit(@truncate(u8, arg1));
+                            std.process.exit(@as(u8, @truncate(arg1)));
                         },
                         else => std.debug.panic("unknown syscall number {d}", .{syscall_number}),
                     }
@@ -237,9 +237,9 @@ pub fn simulateProgram(
                     switch (syscall_number) {
                         0 => {
                             // read
-                            const fd = @intCast(usize, arg1);
-                            const buf = @intCast(usize, arg2);
-                            const count = @intCast(usize, arg3);
+                            const fd = @as(usize, @intCast(arg1));
+                            const buf = @as(usize, @intCast(arg2));
+                            const count = @as(usize, @intCast(arg3));
                             const s = mem[buf .. buf + count];
                             const read = switch (fd) {
                                 0 => builtin_fds.@"0".readUntilDelimiterOrEof(s, '\n') catch "",
@@ -249,13 +249,13 @@ pub fn simulateProgram(
                                     break :blk f.reader().readUntilDelimiterOrEof(s, '\n') catch "";
                                 },
                             };
-                            try stack.append(@intCast(u64, (read orelse "").len));
+                            try stack.append(@as(u64, @intCast((read orelse "").len)));
                         },
                         1 => {
                             // write
-                            const fd = @intCast(usize, arg1);
-                            const buf = @intCast(usize, arg2);
-                            const count = @intCast(usize, arg3);
+                            const fd = @as(usize, @intCast(arg1));
+                            const buf = @as(usize, @intCast(arg2));
+                            const count = @as(usize, @intCast(arg3));
                             const s = mem[buf .. buf + count];
                             switch (fd) {
                                 1 => try builtin_fds.@"1".writeAll(s),

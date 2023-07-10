@@ -20,35 +20,35 @@ pub fn div(comptime T: type, x: T, y: T) T {
 }
 
 pub fn eq(comptime T: type, x: T, y: T) T {
-    return @boolToInt(x == y);
+    return @intFromBool(x == y);
 }
 
 pub fn gt(comptime T: type, x: T, y: T) T {
-    return @boolToInt(x > y);
+    return @intFromBool(x > y);
 }
 
 pub fn lt(comptime T: type, x: T, y: T) T {
-    return @boolToInt(x < y);
+    return @intFromBool(x < y);
 }
 
 pub fn ge(comptime T: type, x: T, y: T) T {
-    return @boolToInt(x >= y);
+    return @intFromBool(x >= y);
 }
 
 pub fn le(comptime T: type, x: T, y: T) T {
-    return @boolToInt(x <= y);
+    return @intFromBool(x <= y);
 }
 
 pub fn ne(comptime T: type, x: T, y: T) T {
-    return @boolToInt(x != y);
+    return @intFromBool(x != y);
 }
 
 pub fn shr(comptime T: type, x: T, y: T) T {
-    return x >> @truncate(u6, @intCast(usize, y));
+    return x >> @as(u6, @truncate(@as(usize, @intCast(y))));
 }
 
 pub fn shl(comptime T: type, x: T, y: T) T {
-    return x << @truncate(u6, @intCast(usize, y));
+    return x << @as(u6, @truncate(@as(usize, @intCast(y))));
 }
 
 pub fn bor(comptime T: type, x: T, y: T) T {
